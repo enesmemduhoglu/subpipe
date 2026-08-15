@@ -125,11 +125,13 @@ style:
     outline: 3.5
     shadow: 1.0
   tr:
-    fontsize: 50
+    fontsize: 54
     primary_colour: "&H00A0E0FF"   # açık sarı
     outline_colour: "&H00000000"
     bold: 0
-    outline: 3.0
+    # Sarı, beyaza göre daha düşük kontrastlı; hareketli arka planda okunabilirlik
+    # için EN ile aynı kalınlıkta kontur
+    outline: 3.5
     shadow: 1.0
   margin_l: 80
   margin_r: 80
