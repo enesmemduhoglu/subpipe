@@ -21,16 +21,16 @@ class TranscribeConfig(BaseModel):
     # aynı ismin bir geçişini düzeltip diğerini kaçırabiliyor.
     prompt: str = ""
     # Transkripsiyon sonrası deterministik düzeltme. prompt'un kaçırdığı özel
-    # isimler için: {"Fatife": "Fatih Efe"}. Kelime sınırı ile eşleşir.
+    # isimler için: {"Ayşeyilmaz": "Ayşe Yılmaz"}. Kelime sınırı ile eşleşir.
     replacements: dict[str, str] = Field(default_factory=dict)
 
 
 class CueConfig(BaseModel):
-    max_chars_per_line: int = 30
+    max_chars_per_line: int = 26
     max_lines: int = 2
     min_duration: float = 0.85
     max_duration: float = 7.0
-    max_cps_en: float = 17.0
+    max_cps_en: float = 20.0
     max_cps_tr: float = 20.0
     min_gap: float = 0.08
     sentence_pause: float = 0.6
@@ -69,17 +69,19 @@ class LangStyle(BaseModel):
 
 class StyleConfig(BaseModel):
     font_name: str = "Arial"
-    en: LangStyle = LangStyle(fontsize=62, bold=1, outline=3.5)
-    tr: LangStyle = LangStyle(fontsize=50, primary_colour="&H00A0E0FF")
+    # Varsayılanlar config.yaml'daki ile aynı hizada: TR vurgulu (beyaz/kalın),
+    # EN destek satırı (altın sarısı, daha küçük).
+    tr: LangStyle = LangStyle(fontsize=74, bold=1, outline=4.5, shadow=2.0)
+    en: LangStyle = LangStyle(fontsize=56, primary_colour="&H00A0E0FF", outline=3.5)
     margin_l: int = 80
     margin_r: int = 80
     margin_v: int = 380
     # İki dil arasındaki dikey boşluk. Boş bir satır olarak eklenir, yüksekliği
     # bu punto kadar olur. 0 = boşluk yok (satırlar bitişik).
-    gap: int = 0
+    gap: int = 48
     # Cue giriş/çıkış yumuşatma (milisaniye). 0 = kapalı, altyazı sert geçer.
-    fade_in: int = 0
-    fade_out: int = 0
+    fade_in: int = 130
+    fade_out: int = 130
     # Aşağıdaki punto ve kenar boşlukları bu yükseklikteki videoya göre
     # kalibre edildi. Farklı çözünürlükte otomatik ölçeklenir — 1080x1920
     # için yazılan değerler 720x1280'de de aynı görünür.
@@ -130,7 +132,7 @@ class RenderConfig(BaseModel):
 class Config(BaseModel):
     source_language: str = "en"
     target_language: str = "tr"
-    primary_language: str = "en"
+    primary_language: str = "tr"
     audio: AudioConfig = AudioConfig()
     transcribe: TranscribeConfig = TranscribeConfig()
     cues: CueConfig = CueConfig()

@@ -6,3 +6,6 @@ __pycache__/
 *.pyc
 assets/fonts/*
 !assets/fonts/.gitkeep
+*.egg-info/
+build/
+dist/

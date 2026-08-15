@@ -62,7 +62,7 @@ def apply_replacements(words: list[Word], mapping: dict[str, str]) -> list[Word]
     Whisper'ın `prompt` parametresi yanlış duymayı azaltıyor ama garanti etmiyor —
     aynı ismin bir geçişini düzeltip diğerini kaçırabiliyor. Bu deterministik.
     Zaman damgası dokunulmadan kalır; tek token iki kelimeye dönüşebilir
-    ("Fatife" -> "Fatih Efe"), join_words bunu sorunsuz birleştirir.
+    ("Ayşeyilmaz" -> "Ayşe Yılmaz"), join_words bunu sorunsuz birleştirir.
     """
     if not mapping:
         return words

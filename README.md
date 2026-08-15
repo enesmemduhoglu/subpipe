@@ -1,19 +1,41 @@
 # subpipe
 
-İngilizce videoya **hem İngilizce hem Türkçe** altyazı ekleyen otomatik pipeline.
-9:16 dikey (Reels/TikTok) için ayarlı, altyazılar videoya yakılır (hardsub).
+İngilizce videoya **hem Türkçe hem İngilizce** altyazıyı otomatik ekleyip videoya yakan pipeline.
+9:16 dikey (Reels / TikTok / Shorts) için ayarlı.
 
 ```
 video → ses → fal.ai Whisper → yeniden segmentasyon → Claude çeviri → ASS → ffmpeg → MP4
 ```
 
+Türkçe üstte beyaz ve kalın, İngilizce altta altın sarısı destek satırı olarak yakılır.
+Her aşama cache'lenir, böylece stil denemeleri transkripsiyon/çeviri parasını tekrar ödetmez.
+
+---
+
+## Neden bir araç gerekiyor
+
+Whisper'ı çağırıp çıktısını SRT'ye dökmek 20 satırlık bir iş. Sonuç ise kullanılamaz olur:
+
+| Sorun | subpipe ne yapıyor |
+|---|---|
+| ASR segmentleri okuma için değil, tanıma için optimize | Kelime timestamp'lerinden altyazı kurallarına uyan cue'lar **yeniden kuruluyor** |
+| Cue bazlı çeviri Türkçede bozuluyor (SOV vs SVO) | Cümle bazlı, bağlamlı çeviri; sonuç cue'lara **oransal dağıtılıyor** |
+| Sessizlikte "Thanks for watching" halüsinasyonu | Kalıp + tekrar + süre sezgisiyle **filtreleniyor**, QA raporunda listeleniyor |
+| Telefon videosu -24 LUFS, platform -14 bekliyor | İki geçişli **EBU R128 normalizasyonu** |
+| Telefon dikey videoyu yatay depolayıp döndürüyor | Display Matrix okunup **en/boy takas ediliyor** |
+| Stil değiştirmek her seferinde baştan işlem | Aşama bazlı **fingerprint cache** |
+
 ---
 
 ## Kurulum
 
+Gereksinimler: Python 3.11+, ffmpeg, bir fal.ai ve bir Anthropic API anahtarı.
+
 ```powershell
 winget install --id Gyan.FFmpeg -e     # sonra YENİ terminal aç (PATH güncellenir)
 
+git clone https://github.com/enesmemduhoglu/subpipe.git
+cd subpipe
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e .
@@ -35,12 +57,12 @@ python -m subpipe run video.mp4              # tüm pipeline
 python -m subpipe run video.mp4 --preview    # ilk 60 sn, NVENC ile hızlı
 ```
 
-Çıktılar `out/` altına düşer: `video_sub.mp4`, `video.en.srt`, `video.tr.srt`, `.vtt`.
+Çıktılar `out/` altına düşer: `video_sub.mp4` + `video.tr.srt` / `video.en.srt` / `.vtt`.
 
-### Aşamayı tek tek çalıştır
+### Aşamalar tek tek
 
 ```powershell
-python -m subpipe transcribe video.mp4    # ses + ASR
+python -m subpipe transcribe video.mp4    # ses çıkarma + ASR
 python -m subpipe segment   video.mp4     # cue'lara böl
 python -m subpipe translate video.mp4     # Claude ile çevir
 python -m subpipe build     video.mp4     # ASS/SRT/VTT + QA raporu
@@ -48,79 +70,67 @@ python -m subpipe render    video.mp4     # videoya yak
 python -m subpipe qa        video.mp4     # QA raporunu ekrana bas
 ```
 
-Her aşama cache'lenir. `config.yaml`'da font boyutunu değiştirip `build` çalıştırırsan
-**sadece ASS yeniden üretilir** — transkripsiyon ve çeviri (para + dakikalar) atlanır.
-Cache'i yok saymak için: `--force segment` (o aşamadan itibaren her şey yeniden çalışır).
+`config.yaml`'da punto değiştirip `render` çalıştırırsan **sadece ASS yeniden üretilir** —
+transkripsiyon ve çeviri cache'ten gelir. Cache'i yok saymak için `--force segment`.
 
-## Önerilen akış
+### Önerilen akış
 
-1. `python -m subpipe build video.mp4` — ASS ve QA raporu çıkar
-2. `work/<hash>/qa.md` dosyasına bak: okuma hızı, satır uzunluğu, atılan halüsinasyonlar
-3. Gerekirse `work/<hash>/subs.ass` dosyasını **Aegisub / Subtitle Edit** ile elle düzelt
-4. `python -m subpipe render video.mp4 --preview` — 60 saniyelik önizleme, telefonda kontrol et
-5. `python -m subpipe render video.mp4` — final
+1. `build` — ASS ve QA raporu çıkar
+2. `work/<hash>/qa.md`'ye bak: okuma hızı, satır uzunluğu, atılan halüsinasyonlar
+3. Gerekirse `work/<hash>/subs.ass`'i Aegisub / Subtitle Edit ile elle düzelt
+4. `render --preview` — telefonda kontrol et
+5. `render` — final
 
 ---
 
 ## Nasıl çalışıyor
 
-### Yeniden segmentasyon (`stages/segment.py`)
+### Yeniden segmentasyon — `stages/segment.py`
 
-Whisper.ın kendi segmentleri ASR için optimize edilmiş, **okuma** için değil. Doğrudan
-ASS'e dökülürse okunamayacak hızda geçen, cümle ortasından bölünmüş cue'lar çıkar.
-Bu modül kelime timestamp'lerinden altyazı kurallarına uyan cue'ları yeniden kurar:
+Pipeline'ın en kritik modülü. Whisper'ın kendi segmentleri doğrudan ASS'e dökülürse
+okunamayacak hızda geçen, cümle ortasından bölünmüş cue'lar çıkar. Burada kelime
+timestamp'lerinden yeniden kuruluyor:
 
-- satır başına 30 karakter, max 2 satır (dikey format için; yatayda 42 yapılabilir)
-- 0.85–7.0 s süre, max 17 CPS (EN) / 20 CPS (TR)
-- bölme noktaları puanlanır: noktalama > uzun duraklama > bağlaç öncesi.
-  Artikel/edat sonrası bölme (`the |`, `to |`) cezalandırılır
-- **halüsinasyon filtresi**: hosted ASR.de VAD düğmesi yok, o yüzden sessizlikte üretilen
-  "Thanks for watching" / "Altyazı M.K." tipi cue'lar burada kalıp, tekrar ve
-  süre/kelime oranı sezgisiyle atılır. Atılanlar QA raporunda listelenir.
+- satır başına 26 karakter, en fazla 2 satır
+- 0.85–7.0 s süre, max 20 CPS
+- bölme noktaları puanlanıyor: noktalama > uzun duraklama > bağlaç öncesi.
+  Artikel, edat ve özne zamiri sonrası bölme cezalandırılıyor (`the |`, `today we |`)
+- `Mr.` / `Dr.` / `vs.` gibi kısaltmalar cümle sonu sayılmıyor
+- halüsinasyon filtresi: hosted ASR'de VAD düğmesi yok, bu yüzden burada
 
-### Çeviri (`stages/translate.py`)
+### Çeviri — `stages/translate.py`
 
-Cue bazlı **çevirmiyoruz**. Türkçe SOV, İngilizce SVO — üç cue'ya yayılmış bir cümleyi
+Cue bazlı **çevirmiyoruz.** Türkçe SOV, İngilizce SVO — üç cue'ya yayılmış bir cümleyi
 parça parça çevirmek anlamsız metin üretir.
 
-Cue'lar `sentence_id` üzerinden tam cümleye toplanır, komşu cümleler salt-bağlam olarak
-eklenip Claude'a batch halinde gönderilir (structured output → ID hizalaması garanti),
-dönen Türkçe metin o cümlenin EN cue'larına karakter payına göre dağıtılır.
+Cue'lar `sentence_id` üzerinden tam cümleye toplanıyor, komşu cümleler salt-bağlam olarak
+eklenip Claude'a batch halinde gönderiliyor (structured output → ID hizalaması garanti),
+dönen Türkçe metin o cümlenin cue'larına karakter payına göre dağıtılıyor.
 
-Zaman çizelgesinin sahibi EN cue'ları — hardsub'da iki dil aynı anda ekranda olacağı
-için ortak zaman çizelgesi şart.
+Zaman çizelgesinin sahibi İngilizce cue'ları — iki dil aynı anda ekranda olacağı için
+ortak zaman çizelgesi şart.
 
-Sistem promptu sabit ve `cache_control: ephemeral` ile cache'leniyor → batch'ler arası
-input maliyeti düşer. `config.yaml`'daki `video_context`, `tone` ve `glossary` alanları
-çeviri kalitesini en çok etkileyen ayarlar — doldur.
+Sistem promptu sabit ve `cache_control: ephemeral` ile cache'leniyor. `config.yaml`'daki
+`video_context`, `tone` ve `glossary` çeviri kalitesini en çok etkileyen ayarlar.
 
-### ASS (`stages/ass.py`)
+### ASS — `stages/ass.py`
 
-İki dil **tek Dialogue satırında**, inline stil reset (`{\rTR}`) ile. İki ayrı Dialogue +
-`MarginV` hesabı yerine bu tercih edildi: satır sayısı değiştiğinde stack kaymaz,
-`Alignment: 2` sayesinde satırlar aşağıdan yukarı yığılır (EN üstte, TR altta).
+İki dil **tek Dialogue satırında**, inline stil reset (`{\rEN}`) ile. İki ayrı Dialogue +
+`MarginV` hesabı yerine bu tercih edildi: satır sayısı değiştiğinde stack kaymıyor.
 
-- `PlayResX/PlayResY` ffprobe'dan gelir — videonunkiyle eşleşmezse tüm ölçekleme kayar.
-  **Döndürme matrisi hesaba katılır:** telefonla çekilen dikey videolar genelde yatay
-  depolanıp 90° döndürülerek gösterilir; ffprobe depolanan boyutu verir, ffmpeg ise
-  decode ederken otomatik döndürür. `probe()` bunu tespit edip en/boyu takas eder
-- `WrapStyle: 2` — libass'in otomatik sarmasını kapatır, satırları biz böldük
-- `MarginV: 380` — Reels/TikTok alt UI'ı ~250–320 px kaplar, 380 güvenli alanın üstünde
+- `PlayResX/PlayResY` ffprobe'dan, **döndürme matrisi hesaba katılarak**
+- `WrapStyle: 2` — libass'in otomatik sarması kapalı, satırları biz bölüyoruz
+- `style.gap` — iki dil arası boşluk (ASS'de satır aralığı etiketi yok; araya boş satır
+  konup yüksekliği `\fs` ile ayarlanıyor)
+- `style.fade_in/out` — `\fad` ile yumuşak geçiş
 
-Stil seçenekleri: `style.gap` (iki dil arası boşluk — araya boş satır konur,
-ASS'de doğrudan satır aralığı etiketi yok), `style.fade_in`/`fade_out` (ms, cue
-geçişlerini yumuşatır), `primary_language` (`tr` = Türkçe üstte ve vurgulu).
+Punto ve kenar boşlukları `style.reference_height`'e (1920) göre yazılıyor ve gerçek video
+yüksekliğine otomatik ölçekleniyor.
 
-> ⚠️ **`WrapStyle: 2` otomatik sarmayı kapatıyor, yani taşan satır SARILMAZ — ekrandan
-> taşar.** Punto büyütürken `cues.max_chars_per_line` düşmeli. `ass` aşaması bunu
-> hesaplayıp uyarı basar; 1080 genişlikte 74 punto için üst sınır ~28 karakter.
+> ⚠️ `WrapStyle: 2` sarma yapmadığı için **taşan satır kesilir.** Punto büyütürken
+> `cues.max_chars_per_line` düşmeli — `ass` aşaması hesaplayıp uyarı basar.
 
-**Punto ve kenar boşlukları otomatik ölçeklenir.** `config.yaml`'daki değerler
-`style.reference_height` (1920) için yazılmıştır; farklı çözünürlükte video verirsen
-`video_height / reference_height` oranıyla ölçeklenir. 1080×1920 için ayarladığın stil
-720×1280'de de aynı görünür — elle bir şey değiştirmen gerekmez.
-
-### Render (`stages/render.py`)
+### Render — `stages/render.py`
 
 Windows tuzağı: `subtitles=` filtresi `C:\...` yolunu parse edemez (`:` filtre ayracı).
 Mutlak yolu escape'lemek yerine ffmpeg ASS dosyasının dizininde çalıştırılıp **göreli**
@@ -128,38 +138,34 @@ dosya adı veriliyor; fontlar da oraya kopyalanıyor.
 
 Final: `libx264 -crf 18 -preset medium`, `-movflags +faststart`. Önizleme NVENC ile.
 
-**Ses yükseklik normalizasyonu (EBU R128).** Telefonla çekilen videolar genelde
--24 LUFS civarında çıkıyor; Instagram/TikTok ise ~-14 LUFS'a göre karıştırıldığı için
-akışta diğer videoların yanında "sesi yok" gibi duyuluyor. İki geçişli `loudnorm`
-kullanılıyor: önce kaynak ölçülüyor (sonuç `work/<hash>/loudness.json`'a cache'lenir),
-sonra ölçülen değerlerle düzeltiliyor — tek geçişliden daha doğru ve pompalamıyor.
-`render.normalize_audio: false` yaparsan ses `-c:a copy` ile aynen geçer.
+**Ses normalizasyonu.** Telefon videoları genelde -24 LUFS civarında; Instagram/TikTok
+~-14 LUFS'a göre karıştırdığı için akışta "sesi yok" gibi duyuluyor. İki geçişli
+`loudnorm` kullanılıyor (ölçüm `work/<hash>/loudness.json`'a cache'lenir), tek geçişliden
+daha doğru ve pompalamıyor. `render.normalize_audio: false` ile kapatılır.
 
 ---
 
 ## Font
 
-Varsayılan **Arial** — her Windows'ta var, Türkçe ş ğ ı İ ö ü ç destekler, kutudan
-çıkar çıkmaz çalışır.
+Varsayılan **Arial** — her Windows'ta var, Türkçe ş ğ ı İ ö ü ç destekler, kutudan çıkar
+çıkmaz çalışır. Daha iyisi için `.ttf` dosyasını `assets/fonts/` altına at ve
+`style.font_name`'i değiştir (ör. `Montserrat SemiBold`).
 
-Daha iyisi için `.ttf` dosyasını `assets/fonts/` altına at ve `config.yaml`'da
-`style.font_name` değerini font adıyla değiştir (ör. `Montserrat SemiBold`).
-
-> Font bulunamazsa libass **sessizce** başka bir fonta düşer. `assets/fonts/` boşsa
-> render bir uyarı basar — yine de önizlemeden gözle kontrol et.
+> Font bulunamazsa libass **sessizce** başkasına düşer. `assets/fonts/` boşsa render
+> uyarı basar — yine de önizlemeden gözle kontrol et.
 
 ## Yatay (16:9) videoya geçmek
 
-`config.yaml`:
-
-Punto otomatik ölçeklendiği için sadece iki şey değişir:
+Punto otomatik ölçeklendiği için iki ayar yeter:
 
 ```yaml
 cues:
-  max_chars_per_line: 42     # 30 -> 42 (yatayda satır daha geniş)
+  max_chars_per_line: 42     # yatayda satır daha geniş
 style:
-  margin_v: 60               # 380 -> 60 (Reels UI yok, dibe yaklaş)
+  margin_v: 60               # Reels UI yok, dibe yaklaş
 ```
+
+---
 
 ## Sorun giderme
 
@@ -167,12 +173,22 @@ style:
 |---|---|
 | `ffmpeg bulunamadı` | winget kurulumundan sonra yeni terminal açmadın |
 | `FAL_KEY tanımlı değil` | `.env` yok veya boş |
-| Transkript segment seviyesinde | `config.yaml` → `transcribe.chunk_level: word` |
-| ASR alan adları tutmuyor | Ham yanıt `work/<hash>/asr_raw.json`'da; normalize tek yerde: `transcribe.py:normalize_chunks` |
-| Çeviri `max_tokens`'a takılıyor | `translate.batch_size`'ı düşür |
-| Türkçe karakterler kutu görünüyor | Font Türkçe desteklemiyor — Arial'a dön veya uygun `.ttf` koy |
-| Altyazı Reels UI'ının altında kalıyor | `style.margin_v` değerini artır |
-| Videoda ses çok kısık / yok gibi | Kaynak muhtemelen -24 LUFS civarı. `render.normalize_audio: true` (varsayılan) -14 LUFS'a çeker; render logunda ölçümü basar |
-| Satır ekrandan taşıyor | Punto büyük / `max_chars_per_line` yüksek. `ass` aşamasının uyarısındaki değeri kullan |
-| Satır sayısı `max_lines`'ı aşıyor | Metin kapasiteye sığsa bile uygun kelime sınırı olmayabilir; `max_chars_per_line`'ı 1-2 artır |
-| QA'da çok fazla CPS ihlali | Konuşma hızlı; `cues.max_cps_en` değerini yükselt ya da çeviriyi kısalt (`tone`'a "daha kısa" ekle) |
+| `credit balance is too low` | Anthropic hesabında kredi yok |
+| Transkript tek dev cue | `transcribe.model` `fal-ai/wizper` olmuş; `fal-ai/whisper` yap |
+| Videoda ses çok kısık | Kaynak muhtemelen -24 LUFS. `render.normalize_audio: true` (varsayılan) |
+| Altyazı yanlış boyutta / yerde | Döndürme matrisi: `ffprobe -show_entries stream_side_data=rotation` |
+| Satır ekrandan taşıyor | `ass` aşamasının uyarısındaki `max_chars_per_line` değerini kullan |
+| Satır sayısı `max_lines`'ı aşıyor | `max_chars_per_line`'ı 1–2 artır |
+| Özel isimler yanlış | `transcribe.prompt`; yetmezse `transcribe.replacements` |
+| Türkçe karakterler kutu | Font Türkçe desteklemiyor — Arial'a dön |
+| Kod değişti, cache eski sonucu veriyor | `cli.py`'deki `STAGE_VERSION`'ı artır |
+
+## Not
+
+`fal-ai/wizper` **kullanma.** `chunk_level` için sadece `"segment"` kabul ediyor ve
+pratikte tüm videoyu tek chunk olarak döndürüyor — altyazı için kullanılamaz. Kelime
+seviyesi timestamp veren endpoint `fal-ai/whisper`.
+
+## Lisans
+
+MIT
