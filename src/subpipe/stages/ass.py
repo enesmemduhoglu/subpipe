@@ -44,6 +44,34 @@ def vtt_time(t: float) -> str:
     return srt_time(t).replace(",", ".")
 
 
+# Arial bold için ölçülen ortalama karakter genişliği / punto oranı.
+# Farklı fontta biraz kayar ama taşma uyarısı için yeterince isabetli.
+CHAR_WIDTH_RATIO = 0.43
+
+
+def check_line_width(meta: VideoMeta, cfg: Config) -> list[str]:
+    """Punto x satır uzunluğu kullanılabilir genişliği aşıyor mu?
+
+    WrapStyle 2 otomatik sarmayı kapattığı için taşan satır SARILMAZ, ekrandan
+    taşar. Bu sessiz bir hata: 3:4 test videosunda görünmeyip 9:16 hedefte
+    patlayabiliyor, çünkü dikeyde punto yüksekliğe göre büyürken satır genişliği
+    dar kalıyor.
+    """
+    st = cfg.style.scaled(meta.height)
+    usable = meta.width - st.margin_l - st.margin_r
+    warnings = []
+    for name, lang in (("TR", st.tr), ("EN", st.en)):
+        need = cfg.cues.max_chars_per_line * CHAR_WIDTH_RATIO * lang.fontsize
+        if need > usable:
+            safe = int(usable / (CHAR_WIDTH_RATIO * lang.fontsize))
+            warnings.append(
+                f"{name} satırı taşabilir: {cfg.cues.max_chars_per_line} karakter x "
+                f"{lang.fontsize} punto ≈ {need:.0f}px, kullanılabilir {usable}px. "
+                f"cues.max_chars_per_line'ı {safe} yap ya da puntoyu küçült."
+            )
+    return warnings
+
+
 def _style_line(name: str, st: LangStyle, cfg: Config) -> str:
     return ", ".join(
         [
@@ -72,6 +100,7 @@ def build_ass(cues: list[BilingualCue], meta: VideoMeta, cfg: Config) -> str:
     # Punto/kenar boşlukları reference_height'e göre yazıldı; ASS koordinatları
     # PlayRes birimindedir, o yüzden gerçek video yüksekliğine ölçekle.
     cfg = cfg.model_copy(update={"style": cfg.style.scaled(meta.height)})
+    st = cfg.style
 
     head = [
         "[Script Info]",
@@ -102,8 +131,20 @@ def build_ass(cues: list[BilingualCue], meta: VideoMeta, cfg: Config) -> str:
 
         text = "\\N".join(top)
         if bottom:
-            joined = "\\N".join(bottom)
-            text = f"{text}\\N{{\\r{secondary}}}{joined}" if text else f"{{\\r{secondary}}}{joined}"
+            joined = f"{{\\r{secondary}}}" + "\\N".join(bottom)
+            if not text:
+                text = joined
+            elif st.gap:
+                # Diller arası boşluk: araya BOŞ bir satır koyuyoruz. Satırın
+                # yüksekliği o noktadaki puntoya göre belirlendiği için \fs ile
+                # boşluğu kontrol ediyoruz. ASS'de doğrudan satır aralığı etiketi
+                # yok, bu standart yöntem.
+                text = f"{text}\\N{{\\fs{st.gap}}}\\N{joined}"
+            else:
+                text = f"{text}\\N{joined}"
+
+        if st.fade_in or st.fade_out:
+            text = f"{{\\fad({st.fade_in},{st.fade_out})}}{text}"
 
         lines.append(
             f"Dialogue: 0,{ass_time(cue.start)},{ass_time(cue.end)},{primary},,0,0,0,,{text}"

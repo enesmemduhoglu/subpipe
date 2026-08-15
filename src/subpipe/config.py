@@ -74,6 +74,12 @@ class StyleConfig(BaseModel):
     margin_l: int = 80
     margin_r: int = 80
     margin_v: int = 380
+    # İki dil arasındaki dikey boşluk. Boş bir satır olarak eklenir, yüksekliği
+    # bu punto kadar olur. 0 = boşluk yok (satırlar bitişik).
+    gap: int = 0
+    # Cue giriş/çıkış yumuşatma (milisaniye). 0 = kapalı, altyazı sert geçer.
+    fade_in: int = 0
+    fade_out: int = 0
     # Aşağıdaki punto ve kenar boşlukları bu yükseklikteki videoya göre
     # kalibre edildi. Farklı çözünürlükte otomatik ölçeklenir — 1080x1920
     # için yazılan değerler 720x1280'de de aynı görünür.
@@ -100,6 +106,7 @@ class StyleConfig(BaseModel):
                 "margin_l": max(0, round(self.margin_l * f)),
                 "margin_r": max(0, round(self.margin_r * f)),
                 "margin_v": max(0, round(self.margin_v * f)),
+                "gap": max(0, round(self.gap * f)) if self.gap else 0,
             }
         )
 

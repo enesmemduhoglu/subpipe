@@ -6,8 +6,8 @@ source_language: en
 target_language: tr
 
 # Ekranda hangi dil üstte ve vurgulu olsun.
-# "en" = İngilizce öğrenme içeriği (dikkat hedef dile). "tr" ile ters çevrilir.
-primary_language: en
+# "tr" = Türkçe üstte ve vurgulu, İngilizce altta destek satırı.
+primary_language: tr
 
 audio:
   sample_rate: 16000
@@ -31,10 +31,12 @@ transcribe:
   replacements:
     Fatife: Fatih Efe
 
-# 9:16 dikey (1080x1920) için ayarlanmış cue kısıtları.
+# 9:16 dikey (1080x1920) icin ayarlanmis cue kisitlari.
 # Yatay 16:9'a geçersen max_chars_per_line'ı 42'ye çıkar.
 cues:
-  max_chars_per_line: 30
+  # Punto buyudukce satir kisalmali; 1080 genislikte 74 punto TR icin
+  # 28 karakter ust sinir (ass.py:check_line_width uyarir). 26 guvenli pay birakir.
+  max_chars_per_line: 26
   max_lines: 2
   min_duration: 0.85
   max_duration: 7.0
@@ -117,22 +119,27 @@ style:
   # (ör. "Montserrat SemiBold", "Inter SemiBold"). Font bulunamazsa libass SESSİZCE
   # başka bir fonta düşer — render sonrası önizlemeden kontrol et.
   font_name: Arial
-  en:
-    fontsize: 62
+  # TR ön planda: üstte, büyük, kalın, beyaz.
+  tr:
+    fontsize: 74
     primary_colour: "&H00FFFFFF"   # beyaz (ASS: &HAABBGGRR)
     outline_colour: "&H00000000"
     bold: 1
-    outline: 3.5
-    shadow: 1.0
-  tr:
-    fontsize: 54
-    primary_colour: "&H00A0E0FF"   # açık sarı
+    outline: 4.5
+    shadow: 2.0
+  # EN destek satırı: altta, daha küçük, sıcak altın sarısı.
+  en:
+    fontsize: 56
+    primary_colour: "&H00A0E0FF"   # altın sarısı (RGB 255,224,160)
     outline_colour: "&H00000000"
     bold: 0
-    # Sarı, beyaza göre daha düşük kontrastlı; hareketli arka planda okunabilirlik
-    # için EN ile aynı kalınlıkta kontur
     outline: 3.5
     shadow: 1.0
+  # İki dil arasındaki nefes payı — boş satır olarak eklenir
+  gap: 48
+  # Cue geçişlerini yumuşat (ms); sert kesme yerine yumuşak giriş/çıkış
+  fade_in: 130
+  fade_out: 130
   margin_l: 80
   margin_r: 80
   # Reels/TikTok alt UI'ı ~250-320px kaplar; 380 güvenli alanın üstünde kalır

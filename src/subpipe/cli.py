@@ -46,9 +46,9 @@ ORDER = ["audio", "transcribe", "segment", "translate", "ass", "render"]
 STAGE_VERSION = {
     "audio": 2,      # v2: Display Matrix rotasyonuna göre en/boy takası
     "transcribe": 3,  # v3: transkripsiyon sonrası isim düzeltme (replacements)
-    "segment": 3,    # v3: kısaltma tespiti + özne zamirleri
+    "segment": 4,    # v4: gerçek satır bölmeyle kapasite kontrolü
     "translate": 1,
-    "ass": 2,        # v2: reference_height'e göre stil ölçekleme
+    "ass": 3,        # v3: diller arası boşluk + fade
 }
 
 
@@ -148,6 +148,8 @@ def run_pipeline(
         _skip("ass")
     else:
         _echo("ass", f"ASS + SRT/VTT (PlayRes {meta.width}x{meta.height})")
+        for w in ass_mod.check_line_width(meta, cfg):
+            typer.secho(f"  uyarı: {w}", fg=typer.colors.YELLOW)
         ass_mod.write_all(bi, meta, cfg, st_ass.out, Path("out"), stem)
         st_ass.commit(fp_ass)
 

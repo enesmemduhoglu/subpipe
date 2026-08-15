@@ -193,7 +193,12 @@ def split_lines(text: str, max_chars: int, max_lines: int) -> list[str]:
 
 def _fits(words: list[Word], c: CueConfig, max_cps: float) -> bool:
     text = join_words(words)
-    if len(text) > c.capacity:  # sert sınır
+    # Toplam uzunluğu kapasiteyle karşılaştırmak YETMİYOR: metin
+    # max_chars x max_lines'a sığsa bile, iki satıra bölecek uygun bir kelime
+    # sınırı olmayabilir ("I have been learning English with Furkan teacher"
+    # 47 karakter, kapasite 52 — ama 26'lık iki satıra bölünemiyor, 3 satır
+    # oluyor). Gerçek bölmeyi yapıp satır sayısına bakıyoruz.
+    if len(split_lines(text, c.max_chars_per_line, c.max_lines)) > c.max_lines:
         return False
     dur = words[-1].end - words[0].start
     if dur > c.max_duration:  # sert sınır

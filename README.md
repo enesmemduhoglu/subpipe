@@ -107,6 +107,14 @@ input maliyeti düşer. `config.yaml`'daki `video_context`, `tone` ve `glossary`
 - `WrapStyle: 2` — libass'in otomatik sarmasını kapatır, satırları biz böldük
 - `MarginV: 380` — Reels/TikTok alt UI'ı ~250–320 px kaplar, 380 güvenli alanın üstünde
 
+Stil seçenekleri: `style.gap` (iki dil arası boşluk — araya boş satır konur,
+ASS'de doğrudan satır aralığı etiketi yok), `style.fade_in`/`fade_out` (ms, cue
+geçişlerini yumuşatır), `primary_language` (`tr` = Türkçe üstte ve vurgulu).
+
+> ⚠️ **`WrapStyle: 2` otomatik sarmayı kapatıyor, yani taşan satır SARILMAZ — ekrandan
+> taşar.** Punto büyütürken `cues.max_chars_per_line` düşmeli. `ass` aşaması bunu
+> hesaplayıp uyarı basar; 1080 genişlikte 74 punto için üst sınır ~28 karakter.
+
 **Punto ve kenar boşlukları otomatik ölçeklenir.** `config.yaml`'daki değerler
 `style.reference_height` (1920) için yazılmıştır; farklı çözünürlükte video verirsen
 `video_height / reference_height` oranıyla ölçeklenir. 1080×1920 için ayarladığın stil
@@ -158,4 +166,6 @@ style:
 | Çeviri `max_tokens`'a takılıyor | `translate.batch_size`'ı düşür |
 | Türkçe karakterler kutu görünüyor | Font Türkçe desteklemiyor — Arial'a dön veya uygun `.ttf` koy |
 | Altyazı Reels UI'ının altında kalıyor | `style.margin_v` değerini artır |
+| Satır ekrandan taşıyor | Punto büyük / `max_chars_per_line` yüksek. `ass` aşamasının uyarısındaki değeri kullan |
+| Satır sayısı `max_lines`'ı aşıyor | Metin kapasiteye sığsa bile uygun kelime sınırı olmayabilir; `max_chars_per_line`'ı 1-2 artır |
 | QA'da çok fazla CPS ihlali | Konuşma hızlı; `cues.max_cps_en` değerini yükselt ya da çeviriyi kısalt (`tone`'a "daha kısa" ekle) |
