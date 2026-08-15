@@ -1,0 +1,104 @@
+# subpipe yapılandırması
+# Tüm ayarlar burada. Stil/kısıt değişikliği sadece `ass` + `render` aşamalarını
+# tetikler; transkripsiyon ve çeviri cache'ten gelir.
+
+source_language: en
+target_language: tr
+
+# Ekranda hangi dil üstte ve vurgulu olsun.
+# "en" = İngilizce öğrenme içeriği (dikkat hedef dile). "tr" ile ters çevrilir.
+primary_language: en
+
+audio:
+  sample_rate: 16000
+  channels: 1
+
+transcribe:
+  # fal.ai model endpoint'i
+  model: fal-ai/wizper
+  # "word" ŞART. "segment" altyazı segmentasyonu için fazla kaba.
+  chunk_level: word
+  version: "3"
+
+# 9:16 dikey (1080x1920) için ayarlanmış cue kısıtları.
+# Yatay 16:9'a geçersen max_chars_per_line'ı 42'ye çıkar.
+cues:
+  max_chars_per_line: 30
+  max_lines: 2
+  min_duration: 0.85
+  max_duration: 7.0
+  max_cps_en: 17.0
+  max_cps_tr: 20.0
+  min_gap: 0.08
+  # Bu süreden uzun boşluk cümle sınırı sayılır
+  sentence_pause: 0.6
+
+# Sessizlikte üretilen halüsinasyon cue'ları (Wizper'da VAD düğmesi yok)
+hallucination:
+  patterns:
+    - "thanks for watching"
+    - "thank you for watching"
+    - "please subscribe"
+    - "subscribe to my channel"
+    - "like and subscribe"
+    - "altyazı m.k."
+    - "amara.org"
+    - "subtitles by"
+    - "transcribed by"
+    - "www."
+  # Aynı metnin arka arkaya bu kadar tekrarı -> ilki hariç at
+  max_repeats: 3
+  # Bu süreden uzun ama bu kelime sayısından kısa cümleler şüpheli
+  long_short_duration: 8.0
+  long_short_words: 5
+
+translate:
+  model: claude-opus-5
+  max_tokens: 16000
+  batch_size: 40
+  # Batch'e salt-bağlam olarak eklenen komşu cümle sayısı
+  context_window: 3
+  # Video hakkında bağlam — çeviri kalitesini en çok bu etkiler
+  video_context: >-
+    İngilizce öğrenmek isteyen Türk takipçiler için hazırlanan kısa dikey video.
+    Konuşma İngilizcesi, günlük ifadeler ve deyimler ağırlıklı.
+  tone: >-
+    Doğal, akıcı, konuşma dili Türkçesi. Kitabi veya çeviri kokan ifadelerden kaçın.
+    Sen/siz ayrımında "sen" kullan.
+  # Sabit terim sözlüğü — tutarlılık için
+  glossary:
+    # "small talk": "havadan sudan sohbet"
+    # "deadline": "teslim tarihi"
+
+style:
+  # Arial her Windows'ta var ve Türkçe ş ğ ı İ ö ü ç destekler — kutudan çıkar çıkmaz çalışır.
+  # Daha iyisi için: .ttf dosyasını assets/fonts/ altına at ve buraya font adını yaz
+  # (ör. "Montserrat SemiBold", "Inter SemiBold"). Font bulunamazsa libass SESSİZCE
+  # başka bir fonta düşer — render sonrası önizlemeden kontrol et.
+  font_name: Arial
+  en:
+    fontsize: 62
+    primary_colour: "&H00FFFFFF"   # beyaz (ASS: &HAABBGGRR)
+    outline_colour: "&H00000000"
+    bold: 1
+    outline: 3.5
+    shadow: 1.0
+  tr:
+    fontsize: 50
+    primary_colour: "&H00A0E0FF"   # açık sarı
+    outline_colour: "&H00000000"
+    bold: 0
+    outline: 3.0
+    shadow: 1.0
+  margin_l: 80
+  margin_r: 80
+  # Reels/TikTok alt UI'ı ~250-320px kaplar; 380 güvenli alanın üstünde kalır
+  margin_v: 380
+
+render:
+  crf: 18
+  preset: medium
+  # Önizleme: NVENC ile saniyeler içinde biter (GTX 1660 Ti'de mevcut)
+  preview_seconds: 60
+  preview_encoder: h264_nvenc
+  preview_cq: 23

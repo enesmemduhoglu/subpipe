@@ -1,0 +1,8 @@
+.venv/
+.env
+work/
+out/
+__pycache__/
+*.pyc
+assets/fonts/*
+!assets/fonts/.gitkeep

@@ -1,0 +1,20 @@
+[project]
+name = "subpipe"
+version = "0.1.0"
+description = "Auto subtitle pipeline: video -> Wizper -> resegment -> Claude TR translation -> bilingual ASS -> burned-in MP4"
+requires-python = ">=3.11"
+dependencies = [
+    "fal-client>=0.5",
+    "anthropic>=0.60",
+    "pydantic>=2.7",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    "typer>=0.12",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

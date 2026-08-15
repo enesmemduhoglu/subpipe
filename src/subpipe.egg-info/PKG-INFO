@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: subpipe
+Version: 0.1.0
+Summary: Auto subtitle pipeline: video -> Wizper -> resegment -> Claude TR translation -> bilingual ASS -> burned-in MP4
+Requires-Python: >=3.11
+Requires-Dist: fal-client>=0.5
+Requires-Dist: anthropic>=0.60
+Requires-Dist: pydantic>=2.7
+Requires-Dist: python-dotenv>=1.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: typer>=0.12
