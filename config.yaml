@@ -60,15 +60,43 @@ translate:
   context_window: 3
   # Video hakkında bağlam — çeviri kalitesini en çok bu etkiler
   video_context: >-
-    İngilizce öğrenmek isteyen Türk takipçiler için hazırlanan kısa dikey video.
-    Konuşma İngilizcesi, günlük ifadeler ve deyimler ağırlıklı.
+    Türk takipçilere yönelik bir Instagram İngilizce öğrenme sayfası için hazırlanan
+    kısa dikey video (Reels). Hedef kitle A1–B2 seviyesinde, İngilizceyi günlük
+    hayatta kullanmak isteyen yetişkinler. İçerik tipik olarak şunlardan biri:
+    günlük konuşma kalıpları, durumsal İngilizce (otelde check-in, restoran,
+    havalimanı, alışveriş), phrasal verb'ler, sık karıştırılan kelimeler
+    (X vs Y) ve hızlı konuşmada kelimelerin birbirine bağlanması.
+
+    KRİTİK: Ekranda İngilizce ve Türkçe altyazı AYNI ANDA görünüyor. İzleyici
+    İngilizceyi okuyor, Türkçe ise anlamayı destekleyen yardımcı satır. Yani
+    Türkçe metnin işi İngilizceyi ikame etmek değil, onu anlaşılır kılmak.
+    İzleyici iki satırı yan yana eşleştirebilmeli.
   tone: >-
-    Doğal, akıcı, konuşma dili Türkçesi. Kitabi veya çeviri kokan ifadelerden kaçın.
-    Sen/siz ayrımında "sen" kullan.
-  # Sabit terim sözlüğü — tutarlılık için
+    Sen dili, samimi ve doğal konuşma Türkçesi. A1–B2 seviyeye uygun sade kelimeler
+    seç; ağdalı, edebi veya resmi yazı diline kaçma.
+
+    İngilizce cümleden uzaklaşma. Doğal Türkçe kur ama serbest yorum yapma, cümleyi
+    yeniden kurgulama, kendi eklemeni yapma — izleyici iki satırı eşleştirmeye
+    çalışıyor. Tek istisna: birebir çevirisi anlamsız olan deyim ve phrasal verb'ler;
+    orada yerleşik Türkçe karşılığı kullan.
+
+    KISA TUT. Türkçe doğal olarak İngilizceden uzun çıkar, ekran alanı ise dar
+    (satır başına 30 karakter, en fazla 2 satır). Aynı anlamı daha az kelimeyle
+    verebiliyorsan onu seç; gereksiz bağlaç, zamir ve dolgu ifadelerini at.
+
+    Türkçede zaten yerleşmiş İngilizce kelimeleri çevirme (check-in, rezervasyon,
+    e-mail, online gibi).
+  # Sabit terim sözlüğü — tutarlılık için.
+  # Dilbilgisi terimleri İngilizce kalır: sayfa bunları böyle öğretiyor,
+  # "yakın geçmiş zaman" demek öğrenciyi kaynaklardan koparır.
   glossary:
-    # "small talk": "havadan sudan sohbet"
-    # "deadline": "teslim tarihi"
+    phrasal verb: phrasal verb
+    present perfect: present perfect
+    past simple: past simple
+    present continuous: present continuous
+    linking: linking
+    small talk: havadan sudan sohbet
+    # Videonda geçen ve tutarlı çevrilmesini istediğin terimleri buraya ekle
 
 style:
   # Arial her Windows'ta var ve Türkçe ş ğ ı İ ö ü ç destekler — kutudan çıkar çıkmaz çalışır.
