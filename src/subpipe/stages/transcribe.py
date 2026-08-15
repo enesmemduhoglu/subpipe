@@ -11,6 +11,7 @@ yok; halüsinasyon temizliği segment.py'ye taşındı.
 from __future__ import annotations
 
 import json
+import re
 import os
 from pathlib import Path
 
@@ -55,6 +56,26 @@ def normalize_chunks(payload: dict) -> list[Word]:
     return words
 
 
+def apply_replacements(words: list[Word], mapping: dict[str, str]) -> list[Word]:
+    """Transkripsiyon sonrası özel isim düzeltmesi.
+
+    Whisper'ın `prompt` parametresi yanlış duymayı azaltıyor ama garanti etmiyor —
+    aynı ismin bir geçişini düzeltip diğerini kaçırabiliyor. Bu deterministik.
+    Zaman damgası dokunulmadan kalır; tek token iki kelimeye dönüşebilir
+    ("Fatife" -> "Fatih Efe"), join_words bunu sorunsuz birleştirir.
+    """
+    if not mapping:
+        return words
+    patterns = [
+        (re.compile(rf"\b{re.escape(src)}\b", re.IGNORECASE), dst)
+        for src, dst in mapping.items()
+    ]
+    for w in words:
+        for pat, dst in patterns:
+            w.word = pat.sub(dst, w.word)
+    return words
+
+
 def transcribe(audio: Path, cfg: Config, raw_dump: Path | None = None) -> list[Word]:
     fal_client = _client()
 
@@ -75,6 +96,7 @@ def transcribe(audio: Path, cfg: Config, raw_dump: Path | None = None) -> list[W
         raw_dump.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
 
     words = normalize_chunks(result)
+    words = apply_replacements(words, cfg.transcribe.replacements)
     if not words:
         raise RuntimeError(
             "ASR kelime döndürmedi. Ham yanıtı kontrol et: "

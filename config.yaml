@@ -25,7 +25,11 @@ transcribe:
   version: "3"
   # Whisper'a özel isim / terim ipucu. Videoda geçen Türkçe isimleri ve marka
   # adlarını buraya yaz; yanlış duymasını azaltır ("Fatih Efe" -> "Fatife").
-  prompt: ""
+  prompt: "Fatih Efe, Furkan"
+  # prompt GARANTİ DEĞİL — aynı ismin bir geçişini düzeltip diğerini kaçırabiliyor.
+  # Transkriptte gördüğün hataları buraya yaz; deterministik olarak düzeltilir.
+  replacements:
+    Fatife: Fatih Efe
 
 # 9:16 dikey (1080x1920) için ayarlanmış cue kısıtları.
 # Yatay 16:9'a geçersen max_chars_per_line'ı 42'ye çıkar.

@@ -39,6 +39,18 @@ app = typer.Typer(add_completion=False, help="Video -> iki dilli (EN+TR) hardsub
 
 ORDER = ["audio", "transcribe", "segment", "translate", "ass", "render"]
 
+# Aşama mantığı değiştiğinde ilgili sayıyı ARTIR. Fingerprint sadece girdileri ve
+# config'i kapsıyor; kod değişikliğini görmez. Örnek: probe() rotasyon düzeltmesi
+# eklendiğinde video ve config aynı kaldığı için eski (yanlış) meta.json cache'te
+# kalıyordu. Sürüm fingerprint'e girdiği için artırmak cache'i geçersiz kılar.
+STAGE_VERSION = {
+    "audio": 2,      # v2: Display Matrix rotasyonuna göre en/boy takası
+    "transcribe": 3,  # v3: transkripsiyon sonrası isim düzeltme (replacements)
+    "segment": 3,    # v3: kısaltma tespiti + özne zamirleri
+    "translate": 1,
+    "ass": 2,        # v2: reference_height'e göre stil ölçekleme
+}
+
 
 def _echo(stage: str, msg: str) -> None:
     typer.echo(f"[{stage}] {msg}")
@@ -69,7 +81,7 @@ def run_pipeline(
     # ---- 1. audio -------------------------------------------------------
     st_audio = Stage(wd, "audio", "wav")
     st_meta = Stage(wd, "meta")
-    fp_audio = fp_of(file_hash(video), cfg.audio.model_dump())
+    fp_audio = fp_of(STAGE_VERSION["audio"], file_hash(video), cfg.audio.model_dump())
     if st_audio.is_fresh(fp_audio) and st_meta.out.exists() and not stale("audio"):
         _skip("audio")
         meta = VideoMeta.model_validate(st_meta.read_json())
@@ -85,7 +97,7 @@ def run_pipeline(
 
     # ---- 2. transcribe --------------------------------------------------
     st_tr = Stage(wd, "transcript")
-    fp_tr = fp_of(fp_audio, cfg.transcribe.model_dump(), cfg.source_language)
+    fp_tr = fp_of(STAGE_VERSION["transcribe"], fp_audio, cfg.transcribe.model_dump(), cfg.source_language)
     if st_tr.is_fresh(fp_tr) and not stale("transcribe"):
         _skip("transcribe")
         doc = TranscriptDoc.model_validate(st_tr.read_json())
@@ -100,7 +112,7 @@ def run_pipeline(
 
     # ---- 3. segment -----------------------------------------------------
     st_seg = Stage(wd, "segment")
-    fp_seg = fp_of(fp_tr, cfg.cues.model_dump(), cfg.hallucination.model_dump())
+    fp_seg = fp_of(STAGE_VERSION["segment"], fp_tr, cfg.cues.model_dump(), cfg.hallucination.model_dump())
     if st_seg.is_fresh(fp_seg) and not stale("segment"):
         _skip("segment")
         seg = SegmentDoc.model_validate(st_seg.read_json())
@@ -115,7 +127,7 @@ def run_pipeline(
 
     # ---- 4. translate ---------------------------------------------------
     st_tx = Stage(wd, "translate")
-    fp_tx = fp_of(fp_seg, cfg.translate.model_dump(), cfg.target_language)
+    fp_tx = fp_of(STAGE_VERSION["translate"], fp_seg, cfg.translate.model_dump(), cfg.target_language)
     if st_tx.is_fresh(fp_tx) and not stale("translate"):
         _skip("translate")
         bi = TranslateDoc.model_validate(st_tx.read_json()).cues
@@ -130,7 +142,7 @@ def run_pipeline(
 
     # ---- 5. ass ---------------------------------------------------------
     st_ass = Stage(wd, "subs", "ass")
-    fp_ass = fp_of(fp_tx, cfg.style.model_dump(), cfg.primary_language,
+    fp_ass = fp_of(STAGE_VERSION["ass"], fp_tx, cfg.style.model_dump(), cfg.primary_language,
                    meta.width, meta.height)
     if st_ass.is_fresh(fp_ass) and not stale("ass"):
         _skip("ass")

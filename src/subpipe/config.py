@@ -17,9 +17,12 @@ class TranscribeConfig(BaseModel):
     model: str = "fal-ai/whisper"
     chunk_level: str = "word"
     version: str = "3"
-    # Whisper'a özel isim / terim ipucu. Türkçe isimleri ("Fatih Efe" -> "Fatife")
-    # ve marka adlarını yanlış duymasını azaltır.
+    # Whisper'a özel isim / terim ipucu. Yanlış duymayı azaltır ama GARANTİ DEĞİL —
+    # aynı ismin bir geçişini düzeltip diğerini kaçırabiliyor.
     prompt: str = ""
+    # Transkripsiyon sonrası deterministik düzeltme. prompt'un kaçırdığı özel
+    # isimler için: {"Fatife": "Fatih Efe"}. Kelime sınırı ile eşleşir.
+    replacements: dict[str, str] = Field(default_factory=dict)
 
 
 class CueConfig(BaseModel):
