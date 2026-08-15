@@ -117,6 +117,14 @@ class RenderConfig(BaseModel):
     preview_seconds: int = 60
     preview_encoder: str = "h264_nvenc"
     preview_cq: int = 23
+    # Ses yükseklik normalizasyonu. Telefonla çekilen videolar genelde -24 LUFS
+    # civarında çıkıyor; Instagram/TikTok ~-14 LUFS'a göre karıştırıldığı için
+    # akışta "sesi yok" gibi duruluyor. Kapatırsan ses -c:a copy ile aynen geçer.
+    normalize_audio: bool = True
+    target_lufs: float = -14.0
+    # True peak tavanı (dBTP). -1.5 platform kodlamalarında clipping'e karşı pay bırakır.
+    target_peak: float = -1.5
+    audio_bitrate: str = "192k"
 
 
 class Config(BaseModel):

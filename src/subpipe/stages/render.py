@@ -7,6 +7,7 @@ dizininde çalıştırıp GÖRELİ dosya adı veriyoruz. Fontlar da oraya kopyal
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -39,6 +40,67 @@ def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
 
 
+def measure_loudness(ffmpeg: str, video: Path, cfg: Config, cache: Path | None) -> dict | None:
+    """loudnorm birinci geçiş: kaynağın gerçek yüksekliğini ölç.
+
+    İki geçişli normalizasyon tek geçişliden daha doğru ve pompalamıyor: önce
+    ölçüp sonra ölçülen değerlerle düzeltiyoruz. Sonuç kaynağa bağlı olduğu için
+    cache'leniyor.
+    """
+    if cache is not None and cache.exists():
+        try:
+            return json.loads(cache.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            pass
+
+    r = cfg.render
+    proc = subprocess.run(
+        [
+            ffmpeg, "-hide_banner", "-i", str(video.resolve()), "-vn",
+            "-af", f"loudnorm=I={r.target_lufs}:TP={r.target_peak}:LRA=11:print_format=json",
+            "-f", "null", "-",
+        ],
+        capture_output=True, text=True,
+    )
+    # JSON stderr'in SONUNDA basılıyor; son { ... } bloğunu al
+    start = proc.stderr.rfind("{")
+    end = proc.stderr.rfind("}")
+    if start == -1 or end == -1:
+        return None
+    try:
+        data = json.loads(proc.stderr[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+
+    if cache is not None:
+        cache.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    return data
+
+
+def _audio_args(ffmpeg: str, video: Path, cfg: Config, cache: Path | None) -> list[str]:
+    r = cfg.render
+    if not r.normalize_audio:
+        return ["-c:a", "copy"]
+
+    m = measure_loudness(ffmpeg, video, cfg, cache)
+    if not m:
+        print("  uyarı: ses yüksekliği ölçülemedi, normalizasyon atlanıyor")
+        return ["-c:a", "copy"]
+
+    measured = float(m["input_i"])
+    print(f"  ses: {measured:.1f} LUFS -> {r.target_lufs:.1f} LUFS "
+          f"({r.target_lufs - measured:+.1f} dB)")
+
+    af = (
+        f"loudnorm=I={r.target_lufs}:TP={r.target_peak}:LRA=11"
+        f":measured_I={m['input_i']}:measured_LRA={m['input_lra']}"
+        f":measured_TP={m['input_tp']}:measured_thresh={m['input_thresh']}"
+        f":offset={m['target_offset']}:linear=true"
+    )
+    # loudnorm 192kHz'e yükseltiyor; aresample ile orijinal orana geri dön
+    return ["-af", f"{af},aresample=48000", "-c:a", "aac", "-b:a", r.audio_bitrate]
+
+
 def render(
     video: Path, ass_path: Path, out_path: Path, cfg: Config, preview: bool = False
 ) -> Path:
@@ -61,7 +123,8 @@ def render(
     if preview:
         base += ["-t", str(cfg.render.preview_seconds)]
 
-    tail = ["-vf", vf, "-pix_fmt", "yuv420p", "-c:a", "copy",
+    audio = _audio_args(ffmpeg, video, cfg, workdir / "loudness.json")
+    tail = ["-vf", vf, "-pix_fmt", "yuv420p", *audio,
             "-movflags", "+faststart", str(out_path.resolve())]
 
     if preview:

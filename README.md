@@ -126,8 +126,14 @@ Windows tuzağı: `subtitles=` filtresi `C:\...` yolunu parse edemez (`:` filtre
 Mutlak yolu escape'lemek yerine ffmpeg ASS dosyasının dizininde çalıştırılıp **göreli**
 dosya adı veriliyor; fontlar da oraya kopyalanıyor.
 
-Final: `libx264 -crf 18 -preset medium`, ses `-c:a copy` (yeniden encode edilmez),
-`-movflags +faststart`. Önizleme NVENC ile.
+Final: `libx264 -crf 18 -preset medium`, `-movflags +faststart`. Önizleme NVENC ile.
+
+**Ses yükseklik normalizasyonu (EBU R128).** Telefonla çekilen videolar genelde
+-24 LUFS civarında çıkıyor; Instagram/TikTok ise ~-14 LUFS'a göre karıştırıldığı için
+akışta diğer videoların yanında "sesi yok" gibi duyuluyor. İki geçişli `loudnorm`
+kullanılıyor: önce kaynak ölçülüyor (sonuç `work/<hash>/loudness.json`'a cache'lenir),
+sonra ölçülen değerlerle düzeltiliyor — tek geçişliden daha doğru ve pompalamıyor.
+`render.normalize_audio: false` yaparsan ses `-c:a copy` ile aynen geçer.
 
 ---
 
@@ -166,6 +172,7 @@ style:
 | Çeviri `max_tokens`'a takılıyor | `translate.batch_size`'ı düşür |
 | Türkçe karakterler kutu görünüyor | Font Türkçe desteklemiyor — Arial'a dön veya uygun `.ttf` koy |
 | Altyazı Reels UI'ının altında kalıyor | `style.margin_v` değerini artır |
+| Videoda ses çok kısık / yok gibi | Kaynak muhtemelen -24 LUFS civarı. `render.normalize_audio: true` (varsayılan) -14 LUFS'a çeker; render logunda ölçümü basar |
 | Satır ekrandan taşıyor | Punto büyük / `max_chars_per_line` yüksek. `ass` aşamasının uyarısındaki değeri kullan |
 | Satır sayısı `max_lines`'ı aşıyor | Metin kapasiteye sığsa bile uygun kelime sınırı olmayabilir; `max_chars_per_line`'ı 1-2 artır |
 | QA'da çok fazla CPS ihlali | Konuşma hızlı; `cues.max_cps_en` değerini yükselt ya da çeviriyi kısalt (`tone`'a "daha kısa" ekle) |

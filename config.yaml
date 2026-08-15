@@ -152,3 +152,11 @@ render:
   preview_seconds: 60
   preview_encoder: h264_nvenc
   preview_cq: 23
+  # Ses yukseklik normalizasyonu (EBU R128, iki gecisli loudnorm).
+  # Telefon videolari genelde -24 LUFS civari cikiyor; Instagram/TikTok ~-14 LUFS'a
+  # gore karistirildigi icin akista "sesi yok" gibi duruluyor.
+  # false yaparsan ses -c:a copy ile aynen gecer (yeniden encode edilmez).
+  normalize_audio: true
+  target_lufs: -14.0
+  target_peak: -1.5
+  audio_bitrate: 192k
