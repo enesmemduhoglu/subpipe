@@ -57,7 +57,13 @@ python -m subpipe run video.mp4              # tüm pipeline
 python -m subpipe run video.mp4 --preview    # ilk 60 sn, NVENC ile hızlı
 ```
 
-Çıktılar `out/` altına düşer: `video_sub.mp4` + `video.tr.srt` / `video.en.srt` / `.vtt`.
+Çıktılar `out/` altına düşer:
+
+| Dosya | |
+|---|---|
+| `video_sub.mp4` | altyazısı yakılmış, sesi normalize edilmiş final |
+| `video.caption.md` | **Instagram post metni** — açıklama + hashtag + alt text |
+| `video.tr.srt` / `video.en.srt` / `.vtt` | ayrı altyazı dosyaları |
 
 ### Aşamalar tek tek
 
@@ -65,6 +71,7 @@ python -m subpipe run video.mp4 --preview    # ilk 60 sn, NVENC ile hızlı
 python -m subpipe transcribe video.mp4    # ses çıkarma + ASR
 python -m subpipe segment   video.mp4     # cue'lara böl
 python -m subpipe translate video.mp4     # Claude ile çevir
+python -m subpipe caption   video.mp4     # Instagram post metni
 python -m subpipe build     video.mp4     # ASS/SRT/VTT + QA raporu
 python -m subpipe render    video.mp4     # videoya yak
 python -m subpipe qa        video.mp4     # QA raporunu ekrana bas
@@ -113,6 +120,16 @@ ortak zaman çizelgesi şart.
 Sistem promptu sabit ve `cache_control: ephemeral` ile cache'leniyor. `config.yaml`'daki
 `video_context`, `tone` ve `glossary` çeviri kalitesini en çok etkileyen ayarlar.
 
+### Caption — `stages/caption.py`
+
+Transkript ve çeviri elde olduğu için post metnini de aynı bağlamdan üretiyoruz.
+Çıktı `out/<video>.caption.md`: kanca + gövde + CTA, `caption.hashtag_count` kadar
+etiket, ve erişilebilirlik için alt text. Videoda geçmeyen bilgi uydurmaması ve tek
+bir CTA vermesi prompt'ta kısıtlanıyor.
+
+Caption bir yan çıktı — üretimi başarısız olursa uyarı basılıp video render'ı devam
+eder, pipeline durmaz. `caption.enabled: false` ile tamamen kapatılır.
+
 ### ASS — `stages/ass.py`
 
 İki dil **tek Dialogue satırında**, inline stil reset (`{\rEN}`) ile. İki ayrı Dialogue +
@@ -144,6 +161,19 @@ Final: `libx264 -crf 18 -preset medium`, `-movflags +faststart`. Önizleme NVENC
 daha doğru ve pompalamıyor. `render.normalize_audio: false` ile kapatılır.
 
 ---
+
+## Yerel ayarlar — `config.local.yaml`
+
+`config.yaml` repodaki **şablon**. Videoya özel ayarların (özel isimler, sözlük,
+sayfaya has ton) repoya sızmaması için yanına `config.local.yaml` koy — varsa
+otomatik olarak o kullanılır, `.gitignore`'da:
+
+```powershell
+copy config.yaml config.local.yaml
+```
+
+Tipik olarak burada değiştirdiklerin: `transcribe.prompt` ve `transcribe.replacements`
+(videoda geçen isimler), `translate.glossary`, `caption.extra`.
 
 ## Font
 

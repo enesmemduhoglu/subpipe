@@ -90,3 +90,13 @@ class SegmentDoc(BaseModel):
 
 class TranslateDoc(BaseModel):
     cues: list[BilingualCue]
+
+
+class CaptionDoc(BaseModel):
+    """Instagram post metni. out/<video>.caption.md olarak yazılır."""
+
+    hook: str
+    body: str
+    cta: str
+    hashtags: list[str] = Field(default_factory=list)
+    alt_text: str

@@ -113,6 +113,15 @@ translate:
     small talk: havadan sudan sohbet
     # Videonda geçen ve tutarlı çevrilmesini istediğin terimleri buraya ekle
 
+# Instagram post metni. Her videoda otomatik uretilir -> out/<video>.caption.md
+caption:
+  enabled: true
+  model: claude-opus-5
+  max_tokens: 4000
+  hashtag_count: 12
+  # Sayfaya ozel ek talimat (marka sesi, tekrarlanan CTA vb.)
+  extra: ""
+
 style:
   # Arial her Windows'ta var ve Türkçe ş ğ ı İ ö ü ç destekler — kutudan çıkar çıkmaz çalışır.
   # Daha iyisi için: .ttf dosyasını assets/fonts/ altına at ve buraya font adını yaz

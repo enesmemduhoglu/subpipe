@@ -58,6 +58,17 @@ class TranslateConfig(BaseModel):
     glossary: dict[str, str] = Field(default_factory=dict)
 
 
+class CaptionConfig(BaseModel):
+    """Instagram post metni üretimi. Kapatmak için enabled: false."""
+
+    enabled: bool = True
+    model: str = "claude-opus-5"
+    max_tokens: int = 4000
+    hashtag_count: int = 12
+    # Sayfaya özel ek talimat (marka sesi, tekrarlanan CTA vb.)
+    extra: str = ""
+
+
 class LangStyle(BaseModel):
     fontsize: int
     primary_colour: str = "&H00FFFFFF"
@@ -138,6 +149,7 @@ class Config(BaseModel):
     cues: CueConfig = CueConfig()
     hallucination: HallucinationConfig = HallucinationConfig()
     translate: TranslateConfig = TranslateConfig()
+    caption: CaptionConfig = CaptionConfig()
     style: StyleConfig = StyleConfig()
     render: RenderConfig = RenderConfig()
 

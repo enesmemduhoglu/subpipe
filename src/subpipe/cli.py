@@ -28,8 +28,10 @@ from . import qa as qa_mod
 from .cache import Stage, file_hash, workdir
 from .cache import fingerprint as fp_of
 from .config import Config, load_config
-from .models import BilingualCue, SegmentDoc, TranscriptDoc, TranslateDoc, VideoMeta, Word
+from .models import (BilingualCue, CaptionDoc, SegmentDoc, TranscriptDoc,
+                     TranslateDoc, VideoMeta, Word)
 from .stages import ass as ass_mod
+from .stages import caption as caption_mod
 from .stages import audio as audio_mod
 from .stages import render as render_mod
 from .stages import segment as segment_mod
@@ -37,7 +39,7 @@ from .stages import translate as translate_mod
 
 app = typer.Typer(add_completion=False, help="Video -> iki dilli (EN+TR) hardsub MP4")
 
-ORDER = ["audio", "transcribe", "segment", "translate", "ass", "render"]
+ORDER = ["audio", "transcribe", "segment", "translate", "caption", "ass", "render"]
 
 # Aşama mantığı değiştiğinde ilgili sayıyı ARTIR. Fingerprint sadece girdileri ve
 # config'i kapsıyor; kod değişikliğini görmez. Örnek: probe() rotasyon düzeltmesi
@@ -48,6 +50,7 @@ STAGE_VERSION = {
     "transcribe": 3,  # v3: transkripsiyon sonrası isim düzeltme (replacements)
     "segment": 4,    # v4: gerçek satır bölmeyle kapasite kontrolü
     "translate": 1,
+    "caption": 1,
     "ass": 3,        # v3: diller arası boşluk + fade
 }
 
@@ -140,7 +143,31 @@ def run_pipeline(
     if stop == 3:
         return
 
-    # ---- 5. ass ---------------------------------------------------------
+    # ---- 5. caption -----------------------------------------------------
+    st_cap = Stage(wd, "caption")
+    fp_cap = fp_of(STAGE_VERSION["caption"], fp_tx, cfg.caption.model_dump(),
+                   cfg.translate.video_context)
+    if not cfg.caption.enabled:
+        typer.secho("[caption] kapalı (caption.enabled: false)", fg=typer.colors.BRIGHT_BLACK)
+    elif st_cap.is_fresh(fp_cap) and not stale("caption"):
+        _skip("caption")
+        cap = CaptionDoc.model_validate(st_cap.read_json())
+        _write_caption(cap, stem)
+    else:
+        _echo("caption", f"{cfg.caption.model} ile post metni")
+        try:
+            cap = caption_mod.generate(bi, cfg)
+            st_cap.write_json(cap, fp_cap)
+            path = _write_caption(cap, stem)
+            _echo("caption", f"{len(cap.hashtags)} etiket -> {path}")
+        except Exception as exc:
+            # Caption yan çıktı; video teslimatını bloklamasın
+            typer.secho(f"  uyarı: caption üretilemedi ({exc}). Video render'ı devam ediyor.",
+                        fg=typer.colors.YELLOW)
+    if stop == 4:
+        return
+
+    # ---- 6. ass ---------------------------------------------------------
     st_ass = Stage(wd, "subs", "ass")
     fp_ass = fp_of(STAGE_VERSION["ass"], fp_tx, cfg.style.model_dump(), cfg.primary_language,
                    meta.width, meta.height)
@@ -159,15 +186,22 @@ def run_pipeline(
     issues = qa_mod.check(bi, seg.dropped, cfg)
     color = typer.colors.YELLOW if issues else typer.colors.GREEN
     typer.secho(f"[qa] {len(issues)} ihlal — rapor: {wd / 'qa.md'}", fg=color)
-    if stop == 4:
+    if stop == 5:
         return
 
-    # ---- 6. render ------------------------------------------------------
+    # ---- 7. render ------------------------------------------------------
     suffix = "_preview" if preview else "_sub"
     out_path = Path("out") / f"{stem}{suffix}.mp4"
     _echo("render", f"{'önizleme (' + str(cfg.render.preview_seconds) + 's)' if preview else 'final'} -> {out_path}")
     render_mod.render(video, st_ass.out, out_path, cfg, preview=preview)
     typer.secho(f"[render] tamam: {out_path}", fg=typer.colors.GREEN)
+
+
+def _write_caption(cap: CaptionDoc, stem: str) -> Path:
+    out = Path("out") / f"{stem}.caption.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(caption_mod.to_markdown(cap), encoding="utf-8", newline="\n")
+    return out
 
 
 def transcribe_mod_call(audio_path: Path, cfg: Config, wd: Path) -> list[Word]:
@@ -185,7 +219,23 @@ ConfigOpt = typer.Option("config.yaml", "--config", "-c", help="Yapılandırma d
 ForceOpt = typer.Option(None, "--force", "-f", help=f"Bu aşamadan itibaren cache'i yok say: {ORDER}")
 
 
+LOCAL_CONFIG = Path("config.local.yaml")
+
+
+def _resolve_config(config: Path) -> Path:
+    """config.yaml repo şablonu; config.local.yaml senin çalışma kopyan.
+
+    Yerel dosya varsa ve kullanıcı açıkça bir config vermediyse onu kullan.
+    Böylece videoya özel ayarlar (özel isimler, sözlük) repoya sızmıyor —
+    config.local.yaml gitignore'da.
+    """
+    if config == Path("config.yaml") and LOCAL_CONFIG.exists():
+        return LOCAL_CONFIG
+    return config
+
+
 def _load(config: Path) -> Config:
+    config = _resolve_config(config)
     # usecwd=True olmadan python-dotenv .env'i ÇAĞIRAN DOSYANIN dizininden
     # yukarı doğru arar (yani site-packages'tan) — kullanıcının çalıştığı
     # dizinden değil. Editable kurulumda tesadüfen çalışır, normal kurulumda
@@ -221,6 +271,12 @@ def segment(video: Path = VideoArg, config: Path = ConfigOpt, force: Optional[st
 def translate(video: Path = VideoArg, config: Path = ConfigOpt, force: Optional[str] = ForceOpt):
     """Cümleleri Türkçeye çevir."""
     run_pipeline(video, _load(config), "translate", force)
+
+
+@app.command()
+def caption(video: Path = VideoArg, config: Path = ConfigOpt, force: Optional[str] = ForceOpt):
+    """Instagram post metnini (caption) üret."""
+    run_pipeline(video, _load(config), "caption", force)
 
 
 @app.command()
