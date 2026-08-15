@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 import typer
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 # Windows konsolu varsayılan olarak cp1254/cp857 kullanıyor ve Türkçe
 # karakterlerde (ı, ş, ğ) UnicodeEncodeError atıyor. UTF-8'e sabitle.
@@ -159,7 +159,7 @@ def run_pipeline(
 def transcribe_mod_call(audio_path: Path, cfg: Config, wd: Path) -> list[Word]:
     from .stages import transcribe as transcribe_mod
 
-    return transcribe_mod.transcribe(audio_path, cfg, raw_dump=wd / "wizper_raw.json")
+    return transcribe_mod.transcribe(audio_path, cfg, raw_dump=wd / "asr_raw.json")
 
 
 # --------------------------------------------------------------------------
@@ -172,7 +172,11 @@ ForceOpt = typer.Option(None, "--force", "-f", help=f"Bu aşamadan itibaren cach
 
 
 def _load(config: Path) -> Config:
-    load_dotenv()
+    # usecwd=True olmadan python-dotenv .env'i ÇAĞIRAN DOSYANIN dizininden
+    # yukarı doğru arar (yani site-packages'tan) — kullanıcının çalıştığı
+    # dizinden değil. Editable kurulumda tesadüfen çalışır, normal kurulumda
+    # çalışmaz.
+    load_dotenv(find_dotenv(usecwd=True))
     return load_config(config)
 
 
@@ -189,7 +193,7 @@ def run(
 
 @app.command()
 def transcribe(video: Path = VideoArg, config: Path = ConfigOpt, force: Optional[str] = ForceOpt):
-    """Sadece ses çıkarma + Wizper transkripsiyonu."""
+    """Sadece ses çıkarma + ASR transkripsiyonu."""
     run_pipeline(video, _load(config), "transcribe", force)
 
 

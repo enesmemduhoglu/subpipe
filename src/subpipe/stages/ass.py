@@ -69,6 +69,10 @@ def _style_line(name: str, st: LangStyle, cfg: Config) -> str:
 def build_ass(cues: list[BilingualCue], meta: VideoMeta, cfg: Config) -> str:
     primary, secondary = ("EN", "TR") if cfg.primary_language == "en" else ("TR", "EN")
 
+    # Punto/kenar boşlukları reference_height'e göre yazıldı; ASS koordinatları
+    # PlayRes birimindedir, o yüzden gerçek video yüksekliğine ölçekle.
+    cfg = cfg.model_copy(update={"style": cfg.style.scaled(meta.height)})
+
     head = [
         "[Script Info]",
         "; subpipe tarafından üretildi",

@@ -1,7 +1,7 @@
 [project]
 name = "subpipe"
 version = "0.1.0"
-description = "Auto subtitle pipeline: video -> Wizper -> resegment -> Claude TR translation -> bilingual ASS -> burned-in MP4"
+description = "Auto subtitle pipeline: video -> fal.ai Whisper -> resegment -> Claude TR translation -> bilingual ASS -> burned-in MP4"
 requires-python = ">=3.11"
 dependencies = [
     "fal-client>=0.5",

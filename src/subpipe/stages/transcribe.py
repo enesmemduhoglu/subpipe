@@ -1,9 +1,10 @@
-"""Aşama 2: fal.ai Wizper ile transkripsiyon.
+"""Aşama 2: fal.ai üzerinden transkripsiyon.
 
-chunk_level="word" ŞART — varsayılan "segment" timestamp'leri altyazı
-segmentasyonu için fazla kaba.
+Endpoint fal-ai/whisper, chunk_level="word". fal-ai/wizper KULLANMA:
+`chunk_level` için sadece "segment" kabul ediyor ve pratikte tüm videoyu tek
+chunk olarak döndürüyor — segment.py kelime timestamp'leri üzerine kurulu.
 
-Wizper hosted olduğu için vad_filter / condition_on_previous_text gibi düğmeler
+Hosted servis olduğu için vad_filter / condition_on_previous_text gibi düğmeler
 yok; halüsinasyon temizliği segment.py'ye taşındı.
 """
 
@@ -26,9 +27,9 @@ def _client():
 
 
 def normalize_chunks(payload: dict) -> list[Word]:
-    """Wizper yanıtını Word listesine çevir.
+    """ASR yanıtını Word listesine çevir.
 
-    Şema değişirse düzeltilecek TEK yer burası — ham yanıt wizper_raw.json'a
+    Şema değişirse düzeltilecek TEK yer burası — ham yanıt asr_raw.json'a
     ayrıca yazılıyor.
     """
     chunks = payload.get("chunks") or []
@@ -58,17 +59,17 @@ def transcribe(audio: Path, cfg: Config, raw_dump: Path | None = None) -> list[W
     fal_client = _client()
 
     url = fal_client.upload_file(str(audio))
-    result = fal_client.subscribe(
-        cfg.transcribe.model,
-        arguments={
-            "audio_url": url,
-            "task": "transcribe",
-            "language": cfg.source_language,
-            "chunk_level": cfg.transcribe.chunk_level,
-            "version": cfg.transcribe.version,
-        },
-        with_logs=False,
-    )
+    args = {
+        "audio_url": url,
+        "task": "transcribe",
+        "language": cfg.source_language,
+        "chunk_level": cfg.transcribe.chunk_level,
+        "version": cfg.transcribe.version,
+    }
+    if cfg.transcribe.prompt.strip():
+        args["prompt"] = cfg.transcribe.prompt.strip()
+
+    result = fal_client.subscribe(cfg.transcribe.model, arguments=args, with_logs=False)
 
     if raw_dump is not None:
         raw_dump.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -76,7 +77,7 @@ def transcribe(audio: Path, cfg: Config, raw_dump: Path | None = None) -> list[W
     words = normalize_chunks(result)
     if not words:
         raise RuntimeError(
-            "Wizper kelime döndürmedi. Ham yanıtı kontrol et: "
+            "ASR kelime döndürmedi. Ham yanıtı kontrol et: "
             f"{raw_dump}\nchunk_level='{cfg.transcribe.chunk_level}' doğru mu?"
         )
     return words

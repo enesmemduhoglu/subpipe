@@ -14,11 +14,18 @@ audio:
   channels: 1
 
 transcribe:
-  # fal.ai model endpoint'i
-  model: fal-ai/wizper
-  # "word" ŞART. "segment" altyazı segmentasyonu için fazla kaba.
+  # fal.ai endpoint'i.
+  # DİKKAT: fal-ai/wizper KULLANMA. Wizper `chunk_level` için sadece "segment"
+  # kabul ediyor ve pratikte tüm videoyu TEK chunk olarak döndürüyor
+  # (31 sn'lik test videosunda tek cue, 390 karakter) — altyazı için kullanılamaz.
+  # Kelime seviyesi timestamp veren endpoint fal-ai/whisper.
+  model: fal-ai/whisper
+  # "word" ŞART — segment.py kelime timestamp'leri üzerine kurulu.
   chunk_level: word
   version: "3"
+  # Whisper'a özel isim / terim ipucu. Videoda geçen Türkçe isimleri ve marka
+  # adlarını buraya yaz; yanlış duymasını azaltır ("Fatih Efe" -> "Fatife").
+  prompt: ""
 
 # 9:16 dikey (1080x1920) için ayarlanmış cue kısıtları.
 # Yatay 16:9'a geçersen max_chars_per_line'ı 42'ye çıkar.
@@ -27,13 +34,15 @@ cues:
   max_lines: 2
   min_duration: 0.85
   max_duration: 7.0
-  max_cps_en: 17.0
+  # 17 Netflix yatay standardı; sosyal medyada konuşma hızlı ve 17 çok
+  # parçalı cue üretiyor. 20 okunabilirlikle akıcılık arasında denge.
+  max_cps_en: 20.0
   max_cps_tr: 20.0
   min_gap: 0.08
   # Bu süreden uzun boşluk cümle sınırı sayılır
   sentence_pause: 0.6
 
-# Sessizlikte üretilen halüsinasyon cue'ları (Wizper'da VAD düğmesi yok)
+# Sessizlikte üretilen halüsinasyon cue'ları (hosted ASR'de VAD düğmesi yok)
 hallucination:
   patterns:
     - "thanks for watching"

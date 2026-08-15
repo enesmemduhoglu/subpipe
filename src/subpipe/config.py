@@ -14,9 +14,12 @@ class AudioConfig(BaseModel):
 
 
 class TranscribeConfig(BaseModel):
-    model: str = "fal-ai/wizper"
+    model: str = "fal-ai/whisper"
     chunk_level: str = "word"
     version: str = "3"
+    # Whisper'a özel isim / terim ipucu. Türkçe isimleri ("Fatih Efe" -> "Fatife")
+    # ve marka adlarını yanlış duymasını azaltır.
+    prompt: str = ""
 
 
 class CueConfig(BaseModel):
@@ -68,6 +71,34 @@ class StyleConfig(BaseModel):
     margin_l: int = 80
     margin_r: int = 80
     margin_v: int = 380
+    # Aşağıdaki punto ve kenar boşlukları bu yükseklikteki videoya göre
+    # kalibre edildi. Farklı çözünürlükte otomatik ölçeklenir — 1080x1920
+    # için yazılan değerler 720x1280'de de aynı görünür.
+    reference_height: int = 1920
+
+    def scaled(self, video_height: int) -> "StyleConfig":
+        f = video_height / self.reference_height
+        if abs(f - 1.0) < 1e-6:
+            return self
+
+        def lang(s: LangStyle) -> LangStyle:
+            return s.model_copy(
+                update={
+                    "fontsize": max(8, round(s.fontsize * f)),
+                    "outline": round(s.outline * f, 2),
+                    "shadow": round(s.shadow * f, 2),
+                }
+            )
+
+        return self.model_copy(
+            update={
+                "en": lang(self.en),
+                "tr": lang(self.tr),
+                "margin_l": max(0, round(self.margin_l * f)),
+                "margin_r": max(0, round(self.margin_r * f)),
+                "margin_v": max(0, round(self.margin_v * f)),
+            }
+        )
 
 
 class RenderConfig(BaseModel):

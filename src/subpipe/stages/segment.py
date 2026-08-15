@@ -1,6 +1,6 @@
 """Aşama 3: yeniden segmentasyon — pipeline'ın en kritik modülü.
 
-Whisper/Wizper segmentleri ASR için optimize edilmiş, OKUMA için değil.
+Whisper'ın kendi segmentleri ASR için optimize edilmiş, OKUMA için değil.
 Doğrudan ASS'e dökülürse çok uzun satırlar, okunamayacak hızda geçen cue'lar ve
 cümle ortasından bölünmüş ifadeler çıkar. Burada kelime timestamp'lerinden
 altyazı kurallarına uyan cue'lar yeniden kuruluyor.
@@ -16,6 +16,28 @@ from ..models import Cue, Dropped, SegmentDoc, Sentence, VideoMeta, Word
 SENTENCE_END = re.compile(r"[.!?]['\"’”\)\]]*$")
 SOFT_PUNCT = re.compile(r"[,;:—-]['\"’”\)\]]*$")
 
+# Nokta ile biten ama cümleyi BİTİRMEYEN kısaltmalar. Bunlar ayıklanmazsa
+# "we are with Mr." tek başına 0.5 sn'lik öksüz bir cue olur.
+ABBREVIATIONS = {
+    "mr", "mrs", "ms", "dr", "prof", "sr", "jr", "st", "mt", "vs", "etc",
+    "inc", "ltd", "co", "corp", "dept", "est", "fig", "approx", "min", "max",
+    "e.g", "i.e", "a.m", "p.m", "u.s", "u.k",
+}
+
+
+def is_sentence_end(token: str) -> bool:
+    token = token.strip()
+    if not SENTENCE_END.search(token):
+        return False
+    if token.rstrip("'\"’”)]").endswith(("!", "?")):
+        return True  # ünlem/soru işareti kısaltma olamaz
+    core = token.rstrip("'\"’”)]").rstrip(".").lower()
+    if core in ABBREVIATIONS:
+        return False
+    if len(core) == 1 and core.isalpha():
+        return False  # baş harf ("J. K. Rowling")
+    return True
+
 # Bu kelimelerden SONRA bölmek kötü — artikel/edat kendinden sonrakine bağlı
 NO_BREAK_AFTER = {
     "a", "an", "the", "to", "of", "in", "on", "at", "for", "from", "by", "with",
@@ -23,6 +45,9 @@ NO_BREAK_AFTER = {
     "are", "was", "were", "be", "been", "being", "am", "my", "your", "his",
     "her", "its", "our", "their", "this", "that", "these", "those", "no",
     "not", "very", "so", "too", "more", "most",
+    # Özne zamirleri: fiilinden ayırmak "Hello, today we | are with..." gibi
+    # kötü bölmeler üretiyor
+    "i", "we", "you", "he", "she", "it", "they", "there", "who",
 }
 
 # Bu kelimelerden ÖNCE bölmek iyi — yeni bir öbek başlatırlar
@@ -50,7 +75,7 @@ def group_sentences(words: list[Word], pause: float) -> list[Sentence]:
     cur: list[Word] = []
     for i, w in enumerate(words):
         cur.append(w)
-        ends = bool(SENTENCE_END.search(w.word.strip()))
+        ends = is_sentence_end(w.word)
         gap = words[i + 1].start - w.end if i + 1 < len(words) else float("inf")
         if ends or gap > pause:
             sentences.append(_mk_sentence(len(sentences), cur))
@@ -72,7 +97,7 @@ def _mk_sentence(idx: int, words: list[Word]) -> Sentence:
 
 # --------------------------------------------------------------------------
 # 0) Halüsinasyon temizliği
-#    Wizper'da VAD düğmesi olmadığı için burada yapılıyor. Atılanlar sessizce
+#    Hosted ASR'de VAD düğmesi olmadığı için burada yapılıyor. Atılanlar sessizce
 #    yutulmaz — QA raporunda listelenir.
 # --------------------------------------------------------------------------
 
@@ -203,7 +228,7 @@ def _choose_break(words: list[Word], start: int, hard_end: int) -> int:
         score = 0.0
         if SOFT_PUNCT.search(words[k - 1].word.strip()):
             score += 100
-        if SENTENCE_END.search(words[k - 1].word.strip()):
+        if is_sentence_end(words[k - 1].word):
             score += 120
         if k < len(words):
             gap = words[k].start - words[k - 1].end

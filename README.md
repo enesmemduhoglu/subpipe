@@ -4,7 +4,7 @@
 9:16 dikey (Reels/TikTok) için ayarlı, altyazılar videoya yakılır (hardsub).
 
 ```
-video → ses → fal.ai Wizper → yeniden segmentasyon → Claude çeviri → ASS → ffmpeg → MP4
+video → ses → fal.ai Whisper → yeniden segmentasyon → Claude çeviri → ASS → ffmpeg → MP4
 ```
 
 ---
@@ -40,7 +40,7 @@ python -m subpipe run video.mp4 --preview    # ilk 60 sn, NVENC ile hızlı
 ### Aşamayı tek tek çalıştır
 
 ```powershell
-python -m subpipe transcribe video.mp4    # ses + Wizper
+python -m subpipe transcribe video.mp4    # ses + ASR
 python -m subpipe segment   video.mp4     # cue'lara böl
 python -m subpipe translate video.mp4     # Claude ile çevir
 python -m subpipe build     video.mp4     # ASS/SRT/VTT + QA raporu
@@ -66,7 +66,7 @@ Cache'i yok saymak için: `--force segment` (o aşamadan itibaren her şey yenid
 
 ### Yeniden segmentasyon (`stages/segment.py`)
 
-Whisper/Wizper segmentleri ASR için optimize edilmiş, **okuma** için değil. Doğrudan
+Whisper.ın kendi segmentleri ASR için optimize edilmiş, **okuma** için değil. Doğrudan
 ASS'e dökülürse okunamayacak hızda geçen, cümle ortasından bölünmüş cue'lar çıkar.
 Bu modül kelime timestamp'lerinden altyazı kurallarına uyan cue'ları yeniden kurar:
 
@@ -74,7 +74,7 @@ Bu modül kelime timestamp'lerinden altyazı kurallarına uyan cue'ları yeniden
 - 0.85–7.0 s süre, max 17 CPS (EN) / 20 CPS (TR)
 - bölme noktaları puanlanır: noktalama > uzun duraklama > bağlaç öncesi.
   Artikel/edat sonrası bölme (`the |`, `to |`) cezalandırılır
-- **halüsinasyon filtresi**: Wizper'da VAD düğmesi yok, o yüzden sessizlikte üretilen
+- **halüsinasyon filtresi**: hosted ASR.de VAD düğmesi yok, o yüzden sessizlikte üretilen
   "Thanks for watching" / "Altyazı M.K." tipi cue'lar burada kalıp, tekrar ve
   süre/kelime oranı sezgisiyle atılır. Atılanlar QA raporunda listelenir.
 
@@ -100,9 +100,17 @@ input maliyeti düşer. `config.yaml`'daki `video_context`, `tone` ve `glossary`
 `MarginV` hesabı yerine bu tercih edildi: satır sayısı değiştiğinde stack kaymaz,
 `Alignment: 2` sayesinde satırlar aşağıdan yukarı yığılır (EN üstte, TR altta).
 
-- `PlayResX/PlayResY` ffprobe'dan gelir — videonunkiyle eşleşmezse tüm ölçekleme kayar
+- `PlayResX/PlayResY` ffprobe'dan gelir — videonunkiyle eşleşmezse tüm ölçekleme kayar.
+  **Döndürme matrisi hesaba katılır:** telefonla çekilen dikey videolar genelde yatay
+  depolanıp 90° döndürülerek gösterilir; ffprobe depolanan boyutu verir, ffmpeg ise
+  decode ederken otomatik döndürür. `probe()` bunu tespit edip en/boyu takas eder
 - `WrapStyle: 2` — libass'in otomatik sarmasını kapatır, satırları biz böldük
 - `MarginV: 380` — Reels/TikTok alt UI'ı ~250–320 px kaplar, 380 güvenli alanın üstünde
+
+**Punto ve kenar boşlukları otomatik ölçeklenir.** `config.yaml`'daki değerler
+`style.reference_height` (1920) için yazılmıştır; farklı çözünürlükte video verirsen
+`video_height / reference_height` oranıyla ölçeklenir. 1080×1920 için ayarladığın stil
+720×1280'de de aynı görünür — elle bir şey değiştirmen gerekmez.
 
 ### Render (`stages/render.py`)
 
@@ -130,13 +138,13 @@ Daha iyisi için `.ttf` dosyasını `assets/fonts/` altına at ve `config.yaml`'
 
 `config.yaml`:
 
+Punto otomatik ölçeklendiği için sadece iki şey değişir:
+
 ```yaml
 cues:
-  max_chars_per_line: 42     # 30 -> 42
+  max_chars_per_line: 42     # 30 -> 42 (yatayda satır daha geniş)
 style:
-  en: { fontsize: 48 }       # 62 -> 48
-  tr: { fontsize: 40 }       # 50 -> 40
-  margin_v: 60               # 380 -> 60
+  margin_v: 60               # 380 -> 60 (Reels UI yok, dibe yaklaş)
 ```
 
 ## Sorun giderme
@@ -146,7 +154,7 @@ style:
 | `ffmpeg bulunamadı` | winget kurulumundan sonra yeni terminal açmadın |
 | `FAL_KEY tanımlı değil` | `.env` yok veya boş |
 | Transkript segment seviyesinde | `config.yaml` → `transcribe.chunk_level: word` |
-| Wizper alan adları tutmuyor | Ham yanıt `work/<hash>/wizper_raw.json`'da; normalize tek yerde: `transcribe.py:normalize_chunks` |
+| ASR alan adları tutmuyor | Ham yanıt `work/<hash>/asr_raw.json`'da; normalize tek yerde: `transcribe.py:normalize_chunks` |
 | Çeviri `max_tokens`'a takılıyor | `translate.batch_size`'ı düşür |
 | Türkçe karakterler kutu görünüyor | Font Türkçe desteklemiyor — Arial'a dön veya uygun `.ttf` koy |
 | Altyazı Reels UI'ının altında kalıyor | `style.margin_v` değerini artır |
