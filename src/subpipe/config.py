@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -124,8 +125,62 @@ class StyleConfig(BaseModel):
         )
 
 
+class TargetConfig(BaseModel):
+    """Çıktı geometrisi. `mode: none` = kaynak neyse o (varsayılan, eski davranış).
+
+    Neden gerekti: pipeline bugüne kadar kaynağın en-boyuna hiç dokunmuyordu ve
+    "9:16" yalnızca `cues`/`style` varsayılanlarının kalibre edildiği bir
+    varsayımdı. Telefondan gelen 3:4 (1440x1920) bir kayıt aynen çıkıyor, Reels
+    oynatıcısı da onu kutulayarak gösteriyordu.
+
+    `crop` kaynağı hedef en-boya MERKEZDEN kırpar, `pad` siyah bantla doldurur.
+    Konuşan kafa için doğru varsayılan kırpmak; kadrajın kenarı önemliyse `pad`.
+    """
+
+    mode: Literal["none", "crop", "pad"] = "none"
+    width: int = 1080
+    height: int = 1920
+    # Bit hızı: telefon kaydı 17 Mbps olabiliyor ve 33 sn'lik klip 70MB'a
+    # çıkıyor. Instagram zaten yeniden kodluyor; bu bant gözle görülür kayıp
+    # vermeden dosyayı ~5 kat küçültüyor.
+    video_bitrate: str = "8M"
+    maxrate: str = "10M"
+    bufsize: str = "16M"
+
+    def dims(self, src_w: int, src_h: int) -> tuple[int, int]:
+        """Çıktının gerçek en/boyu. `none` modunda kaynağınki."""
+        if self.mode == "none":
+            return src_w, src_h
+        return self.width, self.height
+
+    def filter_chain(self) -> str | None:
+        """`subtitles=`ten ÖNCE gelecek geometri filtresi.
+
+        Sıra kritik: ASS punto ve kenar boşlukları hedef yüksekliğe göre
+        ölçekleniyor (`StyleConfig.scaled`). Kırpma yakmadan SONRA yapılsaydı
+        yanmış altyazı kenarlardan kesilirdi.
+        """
+        if self.mode == "none":
+            return None
+        w, h = self.width, self.height
+        if self.mode == "crop":
+            # Hedef en-boyu koruyarak kaynaktan merkezdeki en büyük dikdörtgeni
+            # al, sonra hedef çözünürlüğe ölçekle. `min(...)` kaynak zaten dar
+            # olduğunda taşmayı önler.
+            return (
+                f"crop='min(iw,ih*{w}/{h})':'min(ih,iw*{h}/{w})',"
+                f"scale={w}:{h}:flags=lanczos"
+            )
+        # pad: kaynağı hedefin içine sığdır, kalanı siyahla doldur
+        return (
+            f"scale={w}:{h}:force_original_aspect_ratio=decrease:flags=lanczos,"
+            f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black"
+        )
+
+
 class RenderConfig(BaseModel):
     crf: int = 18
+    target: TargetConfig = Field(default_factory=TargetConfig)
     preset: str = "medium"
     preview_seconds: int = 60
     preview_encoder: str = "h264_nvenc"

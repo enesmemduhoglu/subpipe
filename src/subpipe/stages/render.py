@@ -114,9 +114,15 @@ def render(
     workdir = ass_path.parent
     fontsdir = _stage_fonts(workdir, cfg.style.font_name)
 
+    # Geometri ÖNCE, yakma SONRA. Ters sırada yanmış altyazı kırpmayla birlikte
+    # kenarlardan kesilirdi; ASS zaten hedef boyuta göre üretiliyor (ass.py).
+    target = cfg.render.target
+    geometri = target.filter_chain()
     vf = f"subtitles={ass_path.name}"
     if fontsdir:
         vf += f":fontsdir={fontsdir}"
+    if geometri:
+        vf = f"{geometri},{vf}"
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     base = [ffmpeg, "-y", "-i", str(video.resolve())]
@@ -135,6 +141,16 @@ def render(
             print("  NVENC kullanılamadı, libx264'e düşülüyor")
             cmd = base + ["-c:v", "libx264", "-crf", "23", "-preset", "veryfast"] + tail
             proc = _run(cmd, workdir)
+    elif target.mode != "none":
+        # Hedef profil verildiyse kalite CRF ile değil bit hızıyla sürülür:
+        # amaç "kaynak ne kadar zorsa o kadar büyük dosya" değil, öngörülebilir
+        # bir yükleme boyutu. Profil yoksa eski CRF davranışı aynen korunur.
+        cmd = base + ["-c:v", "libx264", "-preset", cfg.render.preset,
+                      "-b:v", target.video_bitrate,
+                      "-maxrate", target.maxrate,
+                      "-bufsize", target.bufsize,
+                      "-profile:v", "high", "-level", "4.1"] + tail
+        proc = _run(cmd, workdir)
     else:
         cmd = base + ["-c:v", "libx264", "-crf", str(cfg.render.crf),
                       "-preset", cfg.render.preset] + tail

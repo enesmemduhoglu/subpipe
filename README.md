@@ -19,7 +19,7 @@ Whisper'ı çağırıp çıktısını SRT'ye dökmek 20 satırlık bir iş. Sonu
 | Sorun | subpipe ne yapıyor |
 |---|---|
 | ASR segmentleri okuma için değil, tanıma için optimize | Kelime timestamp'lerinden altyazı kurallarına uyan cue'lar **yeniden kuruluyor** |
-| Cue bazlı çeviri Türkçede bozuluyor (SOV vs SVO) | Cümle bazlı, bağlamlı çeviri; sonuç cue'lara **oransal dağıtılıyor** |
+| Cue bazlı çeviri Türkçede bozuluyor (SOV vs SVO) | Cümle bazlı, bağlamlı çeviri; sonuç cue'lara **cümle sınırlarına oturtularak dağıtılıyor** |
 | Sessizlikte "Thanks for watching" halüsinasyonu | Kalıp + tekrar + süre sezgisiyle **filtreleniyor**, QA raporunda listeleniyor |
 | Telefon videosu -24 LUFS, platform -14 bekliyor | İki geçişli **EBU R128 normalizasyonu** |
 | Telefon dikey videoyu yatay depolayıp döndürüyor | Display Matrix okunup **en/boy takas ediliyor** |
@@ -104,6 +104,10 @@ timestamp'lerinden yeniden kuruluyor:
   Artikel, edat ve özne zamiri sonrası bölme cezalandırılıyor (`the |`, `today we |`)
 - `Mr.` / `Dr.` / `vs.` gibi kısaltmalar cümle sonu sayılmıyor
 - halüsinasyon filtresi: hosted ASR'de VAD düğmesi yok, bu yüzden burada
+- bölme noktası seçilirken süre ve okuma hızı da hesaba katılıyor: virgülden
+  bölmek doğru gelir ama "For example," gibi 0.4 sn'lik bir cue üretiyorsa
+  okunmuyor. Yine de kısa kalan cue'lar aynı cümledeki komşusuna katılıyor
+  (satır ve süre sınırlarını bozmuyorsa)
 
 ### Çeviri — `stages/translate.py`
 
@@ -112,7 +116,13 @@ parça parça çevirmek anlamsız metin üretir.
 
 Cue'lar `sentence_id` üzerinden tam cümleye toplanıyor, komşu cümleler salt-bağlam olarak
 eklenip Claude'a batch halinde gönderiliyor (structured output → ID hizalaması garanti),
-dönen Türkçe metin o cümlenin cue'larına karakter payına göre dağıtılıyor.
+dönen Türkçe metin o cümlenin cue'larına dağıtılıyor.
+
+Dağıtım karakter payını hedef alıyor ama körü körüne uymuyor: her hedefin
+etrafındaki kelime sınırları puanlanıyor — cümle sonu ve yan cümle noktalaması
+ödüllendiriliyor, belirteç/bağlaç sonrası ("o kadar |") ve ek öncesi
+("ayırsa | bile") bölmeler cezalandırılıyor. Aksi halde teknik olarak doğru
+oranda ama okunmaz parçalar çıkıyor ("Ne kadar verirsen o kadar | alırsın").
 
 Zaman çizelgesinin sahibi İngilizce cue'ları — iki dil aynı anda ekranda olacağı için
 ortak zaman çizelgesi şart.
@@ -183,6 +193,44 @@ Varsayılan **Arial** — her Windows'ta var, Türkçe ş ğ ı İ ö ü ç dest
 
 > Font bulunamazsa libass **sessizce** başkasına düşer. `assets/fonts/` boşsa render
 > uyarı basar — yine de önizlemeden gözle kontrol et.
+
+## Çıktı en-boyu — `render.target`
+
+Varsayılan olarak **kaynağın çözünürlüğü aynen korunur** (`mode: none`).
+`cues` ve `style` varsayılanları 1080x1920'e göre kalibre; ama telefondan gelen
+kayıt çoğu zaman 3:4 (1440x1920) ve 17 Mbps oluyor — Reels oynatıcısı onu
+kutulayarak gösteriyor ve 33 saniyelik klip 70MB'a çıkıyor.
+
+Tam ekran 9:16 ve öngörülebilir dosya boyutu için:
+
+```yaml
+render:
+  target:
+    mode: crop        # none | crop | pad
+    width: 1080
+    height: 1920
+    video_bitrate: 8M
+    maxrate: 10M
+```
+
+- `crop` — hedef en-boyu koruyarak kaynaktan **merkezden** kırpar. Konuşan kafa
+  için doğru varsayılan.
+- `pad` — kaynağı hedefin içine sığdırır, kalanı siyahla doldurur. Kadrajın
+  kenarı önemliyse.
+- `none` — hiçbir şey yapmaz (eski davranış, varsayılan).
+
+Ölçülen fark (33 sn, 1440x1920 kaynak): **70MB → 33MB**, çıktı 1080x1920.
+`target` doluyken kalite CRF ile değil bit hızıyla sürülür — amaç "kaynak ne
+kadar zorsa o kadar büyük dosya" değil, öngörülebilir bir yükleme boyutu.
+
+> **Altyazı hedef boyuta göre üretilir**, kaynağınkine göre değil: ASS'in
+> `PlayRes`i, puntosu ve kenar boşlukları `target` dolduğunda hedefe göre
+> ölçekleniyor ve geometri filtresi `subtitles=`ten **önce** çalışıyor. Ters
+> sırada yanmış altyazı kırpmayla birlikte kenarlardan kesilirdi.
+
+> `target`ı değiştirmek `cues.max_chars_per_line`'ı **otomatik ayarlamaz**.
+> Genişlik ciddi daralıyorsa `build` çıktısındaki "satır taşabilir" uyarısına
+> bakıp önerilen değeri uygula.
 
 ## Yatay (16:9) videoya geçmek
 

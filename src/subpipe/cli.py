@@ -47,11 +47,11 @@ ORDER = ["audio", "transcribe", "segment", "translate", "caption", "ass", "rende
 # kalıyordu. Sürüm fingerprint'e girdiği için artırmak cache'i geçersiz kılar.
 STAGE_VERSION = {
     "audio": 2,      # v2: Display Matrix rotasyonuna göre en/boy takası
-    "transcribe": 3,  # v3: transkripsiyon sonrası isim düzeltme (replacements)
-    "segment": 4,    # v4: gerçek satır bölmeyle kapasite kontrolü
-    "translate": 1,
+    "transcribe": 4,  # v4: cok kelimeli replacements ("50 minutes" -> "15 minutes")
+    "segment": 6,    # v6: CPS yumusak siniri ancak kazanc varsa durduruyor
+    "translate": 2,  # v2: TR dagitimi cumle/yan cumle sinirlarina oturuyor
     "caption": 1,
-    "ass": 3,        # v3: diller arası boşluk + fade
+    "ass": 4,        # v4: PlayRes kaynağın değil HEDEFİN boyutu (render.target)
 }
 
 
@@ -168,16 +168,23 @@ def run_pipeline(
         return
 
     # ---- 6. ass ---------------------------------------------------------
+    # ASS kaynağın DEĞİL çıktının boyutlarına göre üretilir: render zinciri
+    # kırpma/ölçekleme yapıyorsa (render.target) altyazı o kareye yanacak.
+    # Kaynak boyutuyla üretilseydi punto ve kenar boşlukları yanlış ölçekte
+    # kalır, kırpma da yanmış metni kenarlardan keserdi.
+    hedef_w, hedef_h = cfg.render.target.dims(meta.width, meta.height)
+    cikti_meta = meta.model_copy(update={"width": hedef_w, "height": hedef_h})
+
     st_ass = Stage(wd, "subs", "ass")
     fp_ass = fp_of(STAGE_VERSION["ass"], fp_tx, cfg.style.model_dump(), cfg.primary_language,
-                   meta.width, meta.height)
+                   cfg.render.target.model_dump(), hedef_w, hedef_h)
     if st_ass.is_fresh(fp_ass) and not stale("ass"):
         _skip("ass")
     else:
-        _echo("ass", f"ASS + SRT/VTT (PlayRes {meta.width}x{meta.height})")
-        for w in ass_mod.check_line_width(meta, cfg):
+        _echo("ass", f"ASS + SRT/VTT (PlayRes {hedef_w}x{hedef_h})")
+        for w in ass_mod.check_line_width(cikti_meta, cfg):
             typer.secho(f"  uyarı: {w}", fg=typer.colors.YELLOW)
-        ass_mod.write_all(bi, meta, cfg, st_ass.out, Path("out"), stem)
+        ass_mod.write_all(bi, cikti_meta, cfg, st_ass.out, Path("out"), stem)
         st_ass.commit(fp_ass)
 
     # QA her zaman çalışır — ucuz ve render'dan önce görülmeli
