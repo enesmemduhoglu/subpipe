@@ -209,18 +209,31 @@ def _fits(words: list[Word], c: CueConfig, max_cps: float) -> bool:
     # ("separately," gibi tek kelimelik 0.5s'lik cue). Bu yüzden CPS
     # yüzünden ancak elimizdeki parça min süreyi zaten karşılıyorsa duruyoruz;
     # aksi halde büyümeye devam ediyoruz ve ihlali QA raporluyor.
+    #
+    # Aynı gerekçe elimizdeki parça için de geçerli: o parça DA sınırın
+    # üstündeyse durmak CPS'i düşürmüyor, sadece cue'yu kısaltıyor
+    # ("If you know your level," 0.86s / 26.7 CPS). Durmak ancak durunca
+    # sınırın altında kalıyorsak kazanç.
     if len(words) > 1 and dur > 0 and len(text) / dur > max_cps:
         prev_dur = words[-2].end - words[0].start
-        if prev_dur >= c.min_duration:
+        prev_len = len(join_words(words[:-1]))
+        prev_cps = prev_len / prev_dur if prev_dur > 0 else float("inf")
+        if prev_dur >= c.min_duration and prev_cps <= max_cps:
             return False
     return True
 
 
-def _choose_break(words: list[Word], start: int, hard_end: int) -> int:
+def _choose_break(
+    words: list[Word], start: int, hard_end: int, c: CueConfig, max_cps: float
+) -> int:
     """[start, hard_end) aralığında en iyi bölme noktasını seç.
 
     hard_end kapasite/süre sınırı. Oradan geriye doğru bakıp dilbilgisel olarak
     daha temiz bir nokta varsa oraya çekiyoruz.
+
+    Dilbilgisi tek ölçüt değil: virgülden bölmek her zaman doğru gelir ama
+    "For example," gibi 0.4 sn'lik bir cue üretiyorsa okunmuyor. Bu yüzden
+    süre ve okuma hızı da puanlamaya giriyor.
     """
     if hard_end - start <= 1:
         return hard_end
@@ -245,6 +258,14 @@ def _choose_break(words: list[Word], start: int, hard_end: int) -> int:
                 score += 40
         if prev in NO_BREAK_AFTER:
             score -= 80
+
+        # Süre ve okuma hızı: noktalama ödülü okunamayacak bir cue üretmesin
+        dur = words[k - 1].end - words[start].start
+        if dur < c.min_duration:
+            score -= 90
+        if dur > 0 and len(join_words(words[start:k])) / dur > max_cps:
+            score -= 45
+
         # Kapasiteyi boş bırakma — hard_end'e yakınlık ödülü
         score += (k - start) * 1.5
 
@@ -261,7 +282,11 @@ def sentence_to_cues(s: Sentence, c: CueConfig, max_cps: float) -> list[Cue]:
         while j < n and _fits(words[i : j + 1], c, max_cps):
             j += 1
         hard_end = max(j, i + 1)  # en az bir kelime ilerle
-        k = _choose_break(words, i, hard_end) if hard_end < n else hard_end
+        k = (
+            _choose_break(words, i, hard_end, c, max_cps)
+            if hard_end < n
+            else hard_end
+        )
         chunk = words[i:k]
         cues.append(
             Cue(
@@ -278,6 +303,55 @@ def sentence_to_cues(s: Sentence, c: CueConfig, max_cps: float) -> list[Cue]:
 # --------------------------------------------------------------------------
 # Zamanlama düzeltmeleri
 # --------------------------------------------------------------------------
+
+
+def merge_short_cues(cues: list[Cue], c: CueConfig) -> None:
+    """min_duration altında kalan cue'ları aynı cümledeki komşusuna kat.
+
+    _choose_break artık kısa cue'ları cezalandırıyor ama her zaman kaçınamıyor:
+    cümlenin son parçası ne kalırsa o oluyor. enforce_timing bunları uzatmaya
+    çalışır, komşu cue hemen arkadan geliyorsa uzatacak yer bulamaz — o zaman
+    ekranda göz kırpıp kaybolan bir cue kalır. Burada metni komşuya katıyoruz.
+
+    Birleşme ancak satır ve süre sınırlarını bozmuyorsa yapılır; iki komşu da
+    uygunsa okuma hızı düşük olan seçilir. enforce_timing'DEN ÖNCE çalışmalı.
+    """
+    i = 0
+    while i < len(cues):
+        cue = cues[i]
+        if cue.duration >= c.min_duration:
+            i += 1
+            continue
+
+        best: tuple[float, int, list[str]] | None = None
+        for j in (i - 1, i + 1):
+            if not 0 <= j < len(cues):
+                continue
+            other = cues[j]
+            if other.sentence_id != cue.sentence_id:
+                continue
+            a, b = (other, cue) if j < i else (cue, other)
+            text = f"{a.text} {b.text}".strip()
+            lines = split_lines(text, c.max_chars_per_line, c.max_lines)
+            if len(lines) > c.max_lines:
+                continue
+            dur = b.end - a.start
+            if dur > c.max_duration:
+                continue
+            cps = len(text) / dur if dur > 0 else float("inf")
+            if best is None or cps < best[0]:
+                best = (cps, j, lines)
+
+        if best is None:
+            i += 1
+            continue
+
+        _, j, lines = best
+        lo, hi = (j, i) if j < i else (i, j)
+        cues[lo].end = cues[hi].end
+        cues[lo].lines = lines
+        del cues[hi]
+        i = max(0, lo - 1)  # birleşen cue hâlâ kısa olabilir, tekrar bak
 
 
 def enforce_timing(cues: list[Cue], c: CueConfig, duration: float) -> None:
@@ -303,5 +377,6 @@ def segment(words: list[Word], meta: VideoMeta, cfg: Config) -> SegmentDoc:
     for s in sentences:
         cues.extend(sentence_to_cues(s, cfg.cues, cfg.cues.max_cps_en))
 
+    merge_short_cues(cues, cfg.cues)
     enforce_timing(cues, cfg.cues, meta.duration)
     return SegmentDoc(cues=cues, sentences=sentences, dropped=dropped)

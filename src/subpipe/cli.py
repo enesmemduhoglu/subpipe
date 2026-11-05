@@ -48,7 +48,7 @@ ORDER = ["audio", "transcribe", "segment", "translate", "caption", "ass", "rende
 STAGE_VERSION = {
     "audio": 2,      # v2: Display Matrix rotasyonuna göre en/boy takası
     "transcribe": 4,  # v4: cok kelimeli replacements ("50 minutes" -> "15 minutes")
-    "segment": 4,    # v4: gerçek satır bölmeyle kapasite kontrolü
+    "segment": 6,    # v6: CPS yumusak siniri ancak kazanc varsa durduruyor
     "translate": 1,
     "caption": 1,
     "ass": 4,        # v4: PlayRes kaynağın değil HEDEFİN boyutu (render.target)
