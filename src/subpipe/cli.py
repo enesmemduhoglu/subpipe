@@ -47,7 +47,7 @@ ORDER = ["audio", "transcribe", "segment", "translate", "caption", "ass", "rende
 # kalıyordu. Sürüm fingerprint'e girdiği için artırmak cache'i geçersiz kılar.
 STAGE_VERSION = {
     "audio": 2,      # v2: Display Matrix rotasyonuna göre en/boy takası
-    "transcribe": 3,  # v3: transkripsiyon sonrası isim düzeltme (replacements)
+    "transcribe": 4,  # v4: cok kelimeli replacements ("50 minutes" -> "15 minutes")
     "segment": 4,    # v4: gerçek satır bölmeyle kapasite kontrolü
     "translate": 1,
     "caption": 1,

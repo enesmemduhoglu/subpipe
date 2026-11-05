@@ -56,19 +56,63 @@ def normalize_chunks(payload: dict) -> list[Word]:
     return words
 
 
+_TRAILING = '\'".,!?;:’”)]'
+
+
+def _norm_token(token: str) -> str:
+    return token.strip().strip(_TRAILING).lower()
+
+
+def _apply_phrase(words: list[Word], src: str, dst: str) -> list[Word]:
+    """Kelime sınırını aşan düzeltme ("50 minutes" -> "15 minutes").
+
+    ASR kelime kelime döndüğü için tek token üzerinde regex çalıştırmak
+    yetmiyor. Eşleşen tokenlar ilk tokenda birleştiriliyor; zaman damgası
+    aralığın tamamını kapsıyor, sondaki noktalama korunuyor.
+    """
+    src_tokens = [_norm_token(t) for t in src.split()]
+    m = len(src_tokens)
+    out: list[Word] = []
+    i = 0
+    while i < len(words):
+        window = [_norm_token(w.word) for w in words[i : i + m]]
+        if len(window) == m and window == src_tokens:
+            last = words[i + m - 1].word.strip()
+            tail = last[len(last.rstrip(_TRAILING)) :]
+            out.append(Word(word=dst + tail, start=words[i].start,
+                            end=words[i + m - 1].end))
+            i += m
+        else:
+            out.append(words[i])
+            i += 1
+    return out
+
+
 def apply_replacements(words: list[Word], mapping: dict[str, str]) -> list[Word]:
-    """Transkripsiyon sonrası özel isim düzeltmesi.
+    """Transkripsiyon sonrası düzeltme — özel isim ve yanlış duyulan ifadeler.
 
     Whisper'ın `prompt` parametresi yanlış duymayı azaltıyor ama garanti etmiyor —
     aynı ismin bir geçişini düzeltip diğerini kaçırabiliyor. Bu deterministik.
     Zaman damgası dokunulmadan kalır; tek token iki kelimeye dönüşebilir
     ("Ayşeyilmaz" -> "Ayşe Yılmaz"), join_words bunu sorunsuz birleştirir.
+
+    Kaynak birden çok kelimeyse ("50 minutes" -> "15 minutes") token dizisi
+    üzerinde eşleşir; sayı ve birim yanlış duyulduğunda tek kelimelik kural
+    ("50" -> "15") videodaki her 50'yi bozacağı için bu şart.
     """
     if not mapping:
         return words
+
+    single = {k: v for k, v in mapping.items() if len(k.split()) == 1}
+    phrases = {k: v for k, v in mapping.items() if len(k.split()) > 1}
+
+    # Uzun ifade önce: "50 minutes each day" kısa kuraldan önce denensin
+    for src in sorted(phrases, key=lambda k: -len(k.split())):
+        words = _apply_phrase(words, src, phrases[src])
+
     patterns = [
-        (re.compile(rf"\b{re.escape(src)}\b", re.IGNORECASE), dst)
-        for src, dst in mapping.items()
+        (re.compile(r"\b" + re.escape(src) + r"\b", re.IGNORECASE), dst)
+        for src, dst in single.items()
     ]
     for w in words:
         for pat, dst in patterns:
