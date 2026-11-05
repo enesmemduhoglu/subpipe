@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 from ..config import Config
 from ..models import BilingualCue, Cue, Sentence
@@ -149,42 +150,128 @@ def translate_sentences(sentences: list[Sentence], cfg: Config) -> dict[int, str
     return out
 
 
-def distribute_over_cues(tr_text: str, en_cues: list[Cue]) -> list[str]:
-    """TR cümle metnini o cümlenin EN cue'larına karakter payına göre dağıt."""
+# TR dağıtımında bölme noktası puanlaması. Karakter payı tek başına yetmiyor:
+# "Ne kadar verirsen o kadar | alırsın." teknik olarak doğru orandadır ama
+# okunmaz. Oranı hedef alıp yakınındaki dilbilgisel sınırlara çekiyoruz.
+_TR_STRONG_END = re.compile(r"[.!?…][\"'’”\)\]]*$")
+_TR_SOFT_END = re.compile(r"[,;:][\"'’”\)\]]*$")
+
+# Bu kelimelerden SONRA bölmek kötü — kendilerinden sonrakine bağlılar.
+# Türkçe sona doğru ağırlaşan bir dil; belirteç ve bağlaçları fiilinden
+# ayırmak cue'yu anlamsız bırakıyor.
+_TR_NO_BREAK_AFTER = {
+    "bir", "bu", "şu", "o", "her", "hiç", "en", "daha", "çok", "az", "kadar",
+    "ne", "ve", "veya", "ya", "ama", "fakat", "ancak", "yani", "hem", "de",
+    "da", "ki", "için", "gibi", "ile", "göre", "diye", "bütün", "tüm",
+    "başka", "kendi", "böyle", "şöyle", "öyle", "hangi", "kaç", "birkaç",
+}
+
+
+# Bu kelimelerden ÖNCE bölmek kötü — kendilerinden öncekine bağlılar.
+# "...ayırsa | bile" gibi bölmeler cue'yu havada bırakıyor.
+_TR_NO_BREAK_BEFORE = {
+    "bile", "de", "da", "ki", "mi", "mı", "mu", "mü", "ise", "için", "gibi",
+    "kadar", "göre", "ile", "diye", "olarak", "sonra", "önce", "üzere",
+    "dolayı", "beri", "rağmen", "yerine", "boyunca", "hakkında",
+}
+
+
+def _tr_break_score(
+    words: list[str], k: int, prev_cut: int, target: float, cum: list[int],
+    capacity: int | None, last: bool,
+) -> float:
+    """words[:k] bir parçayı bitirirse bu bölmenin puanı."""
+    # Karakter payından sapma — ana terim, karakter başına ceza
+    score = -abs(cum[k - 1] - target) * 1.5
+
+    prev_w = words[k - 1]
+    if _TR_STRONG_END.search(prev_w):
+        score += 42
+    elif _TR_SOFT_END.search(prev_w):
+        score += 22
+    if prev_w.lower().strip(".,;:!?\"'’”") in _TR_NO_BREAK_AFTER:
+        score -= 50
+    if k < len(words) and words[k].lower().strip(".,;:!?\"'’”") in _TR_NO_BREAK_BEFORE:
+        score -= 50
+
+    # Öksüz parça: tek kelimelik cue hem kötü görünür hem bilgi taşımaz
+    if k - prev_cut == 1:
+        score -= 20
+    if last and len(words) - k == 1:
+        score -= 30
+
+    # Kapasiteyi aşan parça split_lines'ta greedy sarmaya düşer, QA ihlali olur
+    if capacity is not None:
+        # cum[prev_cut-1] sonrasındaki ayırıcı boşluk parçaya ait değil (-1)
+        chunk_len = cum[k - 1] - (cum[prev_cut - 1] + 1 if prev_cut else 0)
+        if chunk_len > capacity:
+            score -= 20 + (chunk_len - capacity) * 4
+    return score
+
+
+def distribute_over_cues(
+    tr_text: str, en_cues: list[Cue], capacity: int | None = None
+) -> list[str]:
+    """TR cümle metnini o cümlenin EN cue'larına dağıt.
+
+    Hedef bölme noktaları EN cue'larının karakter payından geliyor — zaman
+    çizelgesinin sahibi İngilizce. Ama hedefe körü körüne uyulmuyor: her hedefin
+    etrafında en iyi puanlı kelime sınırı aranıyor, böylece TR parçaları cümle
+    ve yan cümle sınırlarına oturuyor.
+    """
     if len(en_cues) == 1:
         return [tr_text]
 
     words = tr_text.split()
+    n = len(en_cues)
     if not words:
-        return [""] * len(en_cues)
-    if len(words) <= len(en_cues):
+        return [""] * n
+    if len(words) <= n:
         # Kelime sayısı cue sayısından az: baştan doldur, kalanı boş bırak
-        return [words[i] if i < len(words) else "" for i in range(len(en_cues))]
+        return [words[i] if i < len(words) else "" for i in range(n)]
+
+    # cum[i] = words[:i+1] birleştirildiğinde oluşan karakter sayısı
+    cum: list[int] = []
+    acc = 0
+    for w in words:
+        acc += len(w) + (1 if cum else 0)
+        cum.append(acc)
+    total_chars = acc
 
     weights = [max(len(c.text), 1) for c in en_cues]
     total_w = sum(weights)
-    total_chars = len(tr_text)
-    targets = [total_chars * w / total_w for w in weights]
+    targets: list[float] = []
+    running = 0
+    for w in weights[:-1]:
+        running += w
+        targets.append(total_chars * running / total_w)
 
-    chunks: list[str] = []
-    wi = 0
+    cuts: list[int] = []
+    prev_cut = 0
     for i, target in enumerate(targets):
         remaining = len(targets) - i - 1
-        cur: list[str] = []
-        size = 0
-        while wi < len(words):
-            if len(words) - wi <= remaining:  # sonraki cue'lara en az 1 kelime bırak
-                break
-            add = len(words[wi]) + (1 if cur else 0)
-            if cur and size + add > target * 1.15:
-                break
-            cur.append(words[wi])
-            size += add
-            wi += 1
-        chunks.append(" ".join(cur))
+        lo = prev_cut + 1
+        hi = len(words) - remaining - 1  # sonraki her parçaya en az 1 kelime
+        if lo > hi:
+            cuts.append(min(lo, len(words)))
+            prev_cut = cuts[-1]
+            continue
+        best_k, best = lo, float("-inf")
+        for k in range(lo, hi + 1):
+            sc = _tr_break_score(
+                words, k, prev_cut, target, cum, capacity, last=(remaining == 0)
+            )
+            if sc > best:
+                best, best_k = sc, k
+        cuts.append(best_k)
+        prev_cut = best_k
 
-    if wi < len(words):  # artan kelimeler son cue'ya
-        chunks[-1] = f"{chunks[-1]} {' '.join(words[wi:])}".strip()
+    chunks: list[str] = []
+    start = 0
+    for k in cuts:
+        chunks.append(" ".join(words[start:k]))
+        start = k
+    chunks.append(" ".join(words[start:]))
     return chunks
 
 
@@ -199,7 +286,12 @@ def build_bilingual(
     for sid, group in by_sentence.items():
         group.sort(key=lambda c: c.start)
         tr_text = translations.get(sid, "")
-        chunks = distribute_over_cues(tr_text, group) if tr_text else [""] * len(group)
+        capacity = cfg.cues.max_chars_per_line * cfg.cues.max_lines
+        chunks = (
+            distribute_over_cues(tr_text, group, capacity)
+            if tr_text
+            else [""] * len(group)
+        )
         for cue, chunk in zip(group, chunks):
             result[id(cue)] = BilingualCue(
                 start=cue.start,
